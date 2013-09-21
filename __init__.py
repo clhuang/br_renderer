@@ -11,6 +11,21 @@ BLOCKSIZE = 256
 MAXGRIDSIZE = 10000000
 
 class Renderer:
+    '''
+    Superclass for rendering 3D models.
+
+    Takes care of most useful functions for 3D rendering,
+    such as calculating view vectors, calculating start points
+    for individual pixels, determining whether or not in box,
+    splitting up large datasets along the x-axis, etc.
+
+    Everything else, e.g. iterating through the spaces
+    and integrating must be done by the attached CUDA module
+    and the parameter spec_render to render().
+
+    To see the variables provided for use in the CUDA module,
+    see renderer.h
+    '''
     projectionXsize = 640 #size of the output array
     projectionYsize = 640
     stepsize = 0.2 #size of a step along the LOS
@@ -19,11 +34,13 @@ class Renderer:
     xPixelOffset = 0 #if 0, the output is centered in the box center--shifts output L/R
     yPixelOffset = 0 #shifts output U/D
 
-    textures = {}
+    mod = None #CUDA kernel code
+    textures = {} #stores references to textures to prevent them being cleared
 
     def loadTexture(self, name, arr):
         '''
         Loads an array into a texture with a name.
+
         Address by the name in the kernel code.
         '''
         tex = self.mod.get_texref(name) #x*y*z
@@ -47,7 +64,8 @@ class Renderer:
     def loadConst(self, name, val):
         '''
         Loads a constant into memory by name in kernel code.
-        If val is a float or an int, it must be wrapped by
+
+        If val is a float, int, char, etc., it must be wrapped by
         np.float32() or np.int32() or similar.
         '''
         cuda.memcpy_htod(self.mod.get_global(name)[0], val)
@@ -66,7 +84,8 @@ class Renderer:
         loading a corresponding portion of each table in splitTables,
         and rendering a portion at a time by calling spec_render.
 
-        spec_render has format spec_render(self, blocksize, gridsize)
+        spec_render is func with format
+        spec_render(self, blocksize, gridsize)
         and is where the CUDA kernel is actually called.
         '''
         self.clearTextures()
@@ -117,12 +136,17 @@ class Renderer:
     def __init__(self, cudaCode):
         '''
         Initialize with a cuda kernel.
+
+        CUDA kernel should include renderer.h to utilize this
         '''
         self.cudaCode = cudaCode
 
     def setAxes(self, xaxis, yaxis, zaxis):
         '''
         Sets the x, y, and z axes.
+
+        x, y, z axes are lists correlating indices (in textures)
+        to locations in space.
         '''
         self.xaxis = xaxis
         self.yaxis = yaxis
@@ -180,6 +204,13 @@ def numpy3d_to_array(np_array, order=None):
     return device_array
 
 def viewAxes(azimuth, altitude):
+    '''
+    The vectors that correspond to a POV with azimuth and altitude
+
+    viewVector is the line following the LOS,
+    viewX and viewY are the directions you shift
+    in space as you move left/right
+    '''
     if altitude > 90: altitude = 90
     if altitude < -90: altitude = -90
     altitude = -altitude
@@ -190,12 +221,6 @@ def viewAxes(azimuth, altitude):
 
     viewVector = np.array((m.cos(altitude) * m.cos(azimuth), m.cos(altitude) * m.sin(azimuth), m.sin(altitude)))
     viewX = np.array((m.sin(azimuth), -m.cos(azimuth), 0))
-    if (altitude == m.pi/2):
-        viewY = np.array((-m.cos(azimuth), -m.sin(azimuth), 0))
-    elif (altitude == -m.pi/2):
-        viewY = np.array((m.cos(azimuth), m.sin(azimuth), 0))
-    else:
-        viewY = np.cross(viewX, viewVector)
-        viewY /= np.linalg.norm(viewY)
+    viewY = np.cross(viewX, viewVector)
 
     return (viewX.astype('float32'), viewY.astype('float32'), viewVector.astype('float32'))

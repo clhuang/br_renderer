@@ -2,6 +2,7 @@
 #define INCLUDE_RENDERER
 #include "helper_math.h"
 
+//range of x, y, z axes
 __constant__ float xmin;
 __constant__ float xmax;
 __constant__ float ymin;
@@ -11,19 +12,19 @@ __constant__ float zmax;
 
 __constant__ int xtotalsize;
 
-__constant__ float3 viewVector; //direction of view as a vector
+__constant__ float3 viewVector; //direction of view as a vector: if any components are negative zero, will not work
 __constant__ float3 viewX; //direction to move as we move along the output x-axis
-__constant__ float3 viewY; //direction to move as we move along the output y-axis 
+__constant__ float3 viewY; //direction to move as we move along the output y-axis
 __constant__ float ds; //size of increment
-__constant__ int projectionXsize;
-__constant__ int projectionYsize;
-__constant__ float distancePerPixel;
+__constant__ int projectionXsize; //x-dimension of the output array
+__constant__ int projectionYsize; //y-dimension of the output array
+__constant__ float distancePerPixel; //real distance between adjacent pixels
 
-__constant__ int xstart;
-__constant__ int sliceWidth;
+__constant__ int xstart; //start index of current slice
+__constant__ int sliceWidth; //width of current slice
 
-__constant__ float xPixelOffset;
-__constant__ float yPixelOffset;
+__constant__ float xPixelOffset; //center of box (not slice) is normally denoted by center pixel in output
+__constant__ float yPixelOffset; //allows offset of box center by non-integral number of pixels
 
 /*
  * Convert a space vector (from (xmin,ymin,zmin) to (xmax,ymax,zmax))
@@ -37,77 +38,38 @@ __device__ float3 realToNormalized(float3 vector) {
 
 /*
  * Gets the initial starting point for an output point at xpixel,ypixel
+ * Returns (INFINITY, INFINITY, INFINITY) for something that doesn't intersect box
  */
 __device__ float3 initialCP(int xpixel, int ypixel) {
     float3 boxCenter = make_float3((xmax + xmin) / 2, (ymax + ymin) / 2, (zmax + zmin) / 2);
     float3 rayOrigin = boxCenter -
         ((projectionXsize / 2 - xpixel + xPixelOffset) * distancePerPixel) * viewX +
         ((projectionYsize / 2 - ypixel + yPixelOffset) * distancePerPixel) * viewY;
-    float3 intersection1, intersection2;
-    intersection1 = make_float3(INFINITY, INFINITY, INFINITY);
-    intersection2 = make_float3(INFINITY, INFINITY, INFINITY);
-    float3 possibleIntersect;
 
     float xpmin = xmin + (xmax - xmin) * xstart / xtotalsize;
     float xpmax = xmin + (xmax - xmin) * (xstart + sliceWidth) / xtotalsize;
+    float3 tnear, tfar;
+    float tn, tf;
 
-    possibleIntersect = rayOrigin + viewVector * (zmax - rayOrigin.z) / viewVector.z;
-    if (possibleIntersect.x <= xpmax && possibleIntersect.x >= xpmin &&
-            possibleIntersect.y <= ymax && possibleIntersect.y >= ymin) {
-        if (intersection1.x == INFINITY)
-            intersection1 = possibleIntersect;
-        else
-            intersection2 = possibleIntersect;
-    }
+    tnear.x = (((viewVector.x >= 0) ? xpmin : xpmax) - rayOrigin.x) / viewVector.x;
+    tnear.y = (((viewVector.y >= 0) ? ymin : ymax) - rayOrigin.y) / viewVector.y;
+    tnear.z = (((viewVector.z >= 0) ? zmin : zmax) - rayOrigin.z) / viewVector.z;
+    tfar.x = (((viewVector.x < 0) ? xpmin : xpmax) - rayOrigin.x) / viewVector.x;
+    tfar.y = (((viewVector.y < 0) ? ymin : ymax) - rayOrigin.y) / viewVector.y;
+    tfar.z = (((viewVector.z < 0) ? zmin : zmax) - rayOrigin.z) / viewVector.z;
 
-    possibleIntersect = rayOrigin + viewVector * (zmin - rayOrigin.z) / viewVector.z;
-    if (possibleIntersect.x <= xpmax && possibleIntersect.x >= xpmin &&
-            possibleIntersect.y <= ymax && possibleIntersect.y >= ymin) {
-        if (intersection1.x == INFINITY)
-            intersection1 = possibleIntersect;
-        else
-            intersection2 = possibleIntersect;
-    }
+    tn = tnear.x;
+    if (tnear.y > tn) tn = tnear.y;
+    if (tnear.z > tn) tn = tnear.z;
 
-    possibleIntersect = rayOrigin + viewVector * (ymax - rayOrigin.y) / viewVector.y;
-    if (possibleIntersect.x <= xpmax && possibleIntersect.x >= xpmin &&
-            possibleIntersect.z <= zmax && possibleIntersect.z >= zmin) {
-        if (intersection1.x == INFINITY)
-            intersection1 = possibleIntersect;
-        else
-            intersection2 = possibleIntersect;
-    }
+    tf = tfar.x;
+    if (tfar.y < tf) tf = tfar.y;
+    if (tfar.z < tf) tf = tfar.z;
 
-    possibleIntersect = rayOrigin + viewVector * (ymin - rayOrigin.y) / viewVector.y;
-    if (possibleIntersect.x <= xpmax && possibleIntersect.x >= xpmin &&
-            possibleIntersect.z <= zmax && possibleIntersect.z >= zmin) {
-        if (intersection1.x == INFINITY)
-            intersection1 = possibleIntersect;
-        else
-            intersection2 = possibleIntersect;
-    }
+    if (tf < tn)
+            return make_float3(INFINITY, INFINITY, INFINITY);
 
-    possibleIntersect = rayOrigin + viewVector * (xpmax - rayOrigin.x) / viewVector.x;
-    if (possibleIntersect.y <= ymax && possibleIntersect.y >= ymin &&
-            possibleIntersect.z <= zmax && possibleIntersect.z >= zmin) {
-        if (intersection1.x == INFINITY)
-            intersection1 = possibleIntersect;
-        else
-            intersection2 = possibleIntersect;
-    }
-
-    possibleIntersect = rayOrigin + viewVector * (xpmin - rayOrigin.x) / viewVector.x;
-    if (possibleIntersect.y <= ymax && possibleIntersect.y >= ymin &&
-            possibleIntersect.z <= zmax && possibleIntersect.z >= zmin) {
-        if (intersection1.x == INFINITY)
-            intersection1 = possibleIntersect;
-        else
-            intersection2 = possibleIntersect;
-    }
-
-    if (intersection2.x == INFINITY) return intersection1;
-
-    return dot(intersection1 - intersection2, viewVector) > 0 ? intersection2 : intersection1;
+    return rayOrigin + viewVector * tn;
 }
 
 /**
