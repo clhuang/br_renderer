@@ -2,6 +2,7 @@ import math as m
 import os
 
 import numpy as np
+from scipy.interpolate import interp1d
 
 import pycuda.driver as cuda
 import pycuda.autoinit
@@ -44,6 +45,7 @@ class Renderer:
         Address by the name in the kernel code.
         '''
         tex = self.mod.get_texref(name) #x*y*z
+        arr = arr.astype('float32')
 
         if len(arr.shape) == 3:
             carr = arr.copy('F')
@@ -90,6 +92,13 @@ class Renderer:
         '''
         self.clearTextures()
         viewX, viewY, viewVector = viewAxes(azimuth, altitude)
+
+        #add axis inverse lookup tables, as well as x axis lookup table
+        tables.extend([
+            ('xtex', np.expand_dims(self.xaxis, 1)),
+            ('ixtex', np.expand_dims(self.ixaxis, 1)),
+            ('iytex', np.expand_dims(self.iyaxis, 1)),
+            ('iztex', np.expand_dims(self.izaxis, 1))])
 
         for tup in tables:
             self.loadTexture(*tup)
@@ -165,6 +174,10 @@ class Renderer:
         self.loadConst('zmax', np.float32(zaxis.max()))
         self.loadConst('xtotalsize', np.int32(xaxis.size))
 
+        self.ixaxis = normalizedInverseAxis(xaxis)
+        self.iyaxis = normalizedInverseAxis(yaxis)
+        self.izaxis = normalizedInverseAxis(zaxis)
+
 def numpy3d_to_array(np_array, order=None):
     '''
     Method for copying a numpy array to a CUDA array
@@ -224,3 +237,13 @@ def viewAxes(azimuth, altitude):
     viewY = np.cross(viewX, viewVector)
 
     return (viewX.astype('float32'), viewY.astype('float32'), viewVector.astype('float32'))
+
+def normalizedInverseAxis(axis):
+    '''
+    From an axis (corresponds table indices to real coordinates),
+    generate an inverse lookup table that will take real coordinates
+    (normalized to (0, 1)) and return a normalized (0, 1) lookup index
+    '''
+    axinverse = interp1d((axis - axis.min()) / np.ptp(axis),
+            np.linspace(0, 1, axis.size))
+    return axinverse(np.linspace(0, 1, axis.size * 6)).astype('float32')

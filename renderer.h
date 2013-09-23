@@ -1,6 +1,10 @@
 #ifndef INCLUDE_RENDERER
 #define INCLUDE_RENDERER
 #include "helper_math.h"
+texture<float, 1, cudaReadModeElementType> xtex;
+texture<float, 1, cudaReadModeElementType> ixtex;
+texture<float, 1, cudaReadModeElementType> iytex;
+texture<float, 1, cudaReadModeElementType> iztex;
 
 //range of x, y, z axes
 __constant__ float xmin;
@@ -27,13 +31,16 @@ __constant__ float xPixelOffset; //center of box (not slice) is normally denoted
 __constant__ float yPixelOffset; //allows offset of box center by non-integral number of pixels
 
 /*
- * Convert a space vector (from (xmin,ymin,zmin) to (xmax,ymax,zmax))
- * to a normalized vector suitable for texture lookup
+ * Convert a space vector (from (xslicemin,ymin,zmin) to (xslicemax,ymax,zmax))
+ * to a normalized vector (within the slice) suitable for texture lookup
  */
-__device__ float3 realToNormalized(float3 vector) {
-    return make_float3((vector.x - xmin) / (xmax - xmin),
-            (vector.y - ymin) / (ymax - ymin),
-            (vector.z - zmin) / (zmax - zmin));
+__device__ float3 realToNormalized(float3 v) {
+    float3 fv;
+    fv.x = tex1D(ixtex, (v.x - xmin) / (xmax - xmin));
+    fv.y = tex1D(iytex, (v.y - ymin) / (ymax - ymin));
+    fv.z = tex1D(iztex, (v.z - zmin) / (zmax - zmin));
+    fv.x = (fv.x * xtotalsize - xstart) / (float) sliceWidth;
+    return fv;
 }
 
 /*
@@ -46,8 +53,8 @@ __device__ float3 initialCP(int xpixel, int ypixel) {
         ((projectionXsize / 2 - xpixel + xPixelOffset) * distancePerPixel) * viewX +
         ((projectionYsize / 2 - ypixel + yPixelOffset) * distancePerPixel) * viewY;
 
-    float xpmin = xmin + (xmax - xmin) * xstart / xtotalsize;
-    float xpmax = xmin + (xmax - xmin) * (xstart + sliceWidth) / xtotalsize;
+    float xpmin = tex1D(xtex, xstart / (float) xtotalsize);
+    float xpmax = tex1D(xtex, (xstart + sliceWidth) / (float) xtotalsize);
     float3 tnear, tfar;
     float tn, tf;
 
@@ -84,5 +91,4 @@ __device__ bool isInSlice(float3 currentPosition) {
         currentPosition.x >= xmin + (xmax - xmin) * xstart / (float) xtotalsize &&
         currentPosition.x <= xmin + (xmax - xmin) * (xstart + sliceWidth) / (float) xtotalsize;
 }
-
 #endif
