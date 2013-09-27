@@ -55,26 +55,18 @@ __device__ float3 initialCP(int xpixel, int ypixel) {
 
     float xpmin = tex1D(xtex, xstart / (float) xtotalsize);
     float xpmax = tex1D(xtex, (xstart + sliceWidth) / (float) xtotalsize);
-    float3 tnear, tfar;
     float tn, tf;
 
-    tnear.x = (((viewVector.x >= 0) ? xpmin : xpmax) - rayOrigin.x) / viewVector.x;
-    tnear.y = (((viewVector.y >= 0) ? ymin : ymax) - rayOrigin.y) / viewVector.y;
-    tnear.z = (((viewVector.z >= 0) ? zmin : zmax) - rayOrigin.z) / viewVector.z;
-    tfar.x = (((viewVector.x < 0) ? xpmin : xpmax) - rayOrigin.x) / viewVector.x;
-    tfar.y = (((viewVector.y < 0) ? ymin : ymax) - rayOrigin.y) / viewVector.y;
-    tfar.z = (((viewVector.z < 0) ? zmin : zmax) - rayOrigin.z) / viewVector.z;
+    float3 tbot = (make_float3(xpmin, ymin, zmin) - rayOrigin) / viewVector;
+    float3 ttop = (make_float3(xpmax, ymax, zmax) - rayOrigin) / viewVector;
 
-    tn = tnear.x;
-    if (tnear.y > tn) tn = tnear.y;
-    if (tnear.z > tn) tn = tnear.z;
+    float3 tnear = fminf(ttop, tbot);
+    float3 tfar = fmaxf(ttop, tbot);
 
-    tf = tfar.x;
-    if (tfar.y < tf) tf = tfar.y;
-    if (tfar.z < tf) tf = tfar.z;
+    tn = fmaxf(tnear.x, fmaxf(tnear.y, tnear.z));
+    tf = fminf(tfar.x, fminf(tfar.y, tfar.z));
 
-    if (tf < tn)
-            return make_float3(INFINITY, INFINITY, INFINITY);
+    if (tf < tn) return make_float3(INFINITY, INFINITY, INFINITY);
 
     return rayOrigin + viewVector * tn;
 }
