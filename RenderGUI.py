@@ -2,7 +2,6 @@ import numpy as np
 
 import kivy
 from kivy.app import App
-from kivy.clock import Clock
 from kivy.config import Config
 from kivy.uix.widget import Widget
 from kivy.graphics.texture import Texture
@@ -102,9 +101,8 @@ class RenderGUI(Widget):
         # then blit the buffer
         self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
         with self.canvas:
-            self.rect_bg = Rectangle(
-                    texture=self.texture, pos=(0, 0),
-                    size=(self.texture.size))
+            self.rect_bg = Rectangle(texture=self.texture, pos=(0, 0),
+                                     size=(self.texture.size))
         self.canvas.ask_update()
 
 
@@ -123,4 +121,3 @@ def set_renderer(rend, channel):
     RenderGUI.channel = channel
     app = RenderApp(rend)
     app.run()
-

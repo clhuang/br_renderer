@@ -227,8 +227,7 @@ def view_axes(azimuth, altitude):
     view_x and view_y are the directions you shift
     in space as you move left/right
     '''
-    if altitude > 90: altitude = 90
-    if altitude < -90: altitude = -90
+    altitude = sorted((altitude, 90, -90))[1]
     altitude = -altitude
     azimuth = azimuth % 360 - 180
 
@@ -251,4 +250,3 @@ def norm_inverse_axis(axis):
     axinverse = interp1d((axis - axis.min()) / np.ptp(axis),
                          np.linspace(0, 1, axis.size))
     return axinverse(np.linspace(0, 1, axis.size * 6)).astype('float32')
-
