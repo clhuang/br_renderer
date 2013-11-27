@@ -2,42 +2,86 @@ import numpy as np
 
 import kivy
 from kivy.app import App
-from kivy.config import Config
 from kivy.uix.widget import Widget
 from kivy.graphics.texture import Texture
-from kivy.graphics import Rectangle
+from kivy.core.window import Window
+from kivy.properties import NumericProperty, BooleanProperty, VariableListProperty
+from kivy.uix.textinput import TextInput
+from kivy.uix.checkbox import CheckBox
 
 kivy.require('1.1.2')
 
 
+BUF_DIMENSIONS = (3840, 2160)  # supports up to 4k screens
+
+
+class NumberSetter(TextInput):
+    '''
+    Text input that does something on focus
+    '''
+    padding = VariableListProperty([2])
+    input_type = 'number'
+    multiline = False
+
+    def on_focus(self, instance, value, *largs):
+        TextInput.on_focus(self, instance, value, *largs)
+        self.sonfocus(value)
+
+    def sonfocus(self, value):
+        pass
+
+
+class MagicCB(CheckBox):
+    '''
+    Checkbox that does something on change
+    '''
+    def __init__(self, **kwargs):
+        super(MagicCB, self).__init__(**kwargs)
+        self.bind(active=lambda cb, value: self.checkbox_active(cb, value))
+
+    def checkbox_active(self, cb, value):
+        print "hi"
+
+
 class RenderGUI(Widget):
-    azimuth = 20
-    altitude = 20
+    rend = None
+    azimuth = NumericProperty(20.0)
+    altitude = NumericProperty(20.0)
+    distance_per_pixel = NumericProperty(0.0)
+    stepsize = NumericProperty(0.0)
+    x_pixel_offset = NumericProperty(0)
+    y_pixel_offset = NumericProperty(0)
+    rend_opacity = BooleanProperty(False)
+    channel = NumericProperty(0)
 
     log_offset = 18
+    data_str = ('channel:\n'
+                'opacity:\n'
+                'altitude:\n'
+                'azimuth:\n'
+                'dist per pixel:\n'
+                'stepsize:\n')
 
     def __init__(self, rend, **kwargs):
+        self.texture = Texture.create(size=BUF_DIMENSIONS)
+        self.texture_size = BUF_DIMENSIONS
         super(RenderGUI, self).__init__(**kwargs)
-        Config.set('graphics', 'width', rend.projection_x_size)
-        Config.set('graphics', 'height', rend.projection_y_size)
-
-        from kivy.core.window import Window
 
         self.rend = rend
-        self.xsize = rend.projection_x_size
-        self.ysize = rend.projection_y_size
-        self.stepsize = rend.stepsize
-        self.distance_per_pixel = rend.distance_per_pixel
-        self.rendersize = self.ysize * self.xsize
-        self.texture = Texture.create(size=(self.xsize, self.ysize))
-        self.texture.flip_vertical()
+        self.buffer_array = np.empty(BUF_DIMENSIONS[::-1], dtype='uint8')
+        self.distance_per_pixel = self.rend.distance_per_pixel
+        self.stepsize = self.rend.stepsize
 
         self.x_pixel_offset = rend.x_pixel_offset
         self.y_pixel_offset = rend.y_pixel_offset
 
+        self._keyboard_open()
+        Window.bind(on_resize=self._on_resize)
+        self._on_resize(Window, Window.size[0], Window.size[1])
+
+    def _keyboard_open(self):
         self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
         self._keyboard.bind(on_key_down=self._on_keyboard_down)
-        Window.bind(on_resize=self._on_resize)
 
     def _keyboard_closed(self):
         self._keyboard.unbind(on_key_down=self._on_keyboard_down)
@@ -59,50 +103,57 @@ class RenderGUI(Widget):
         elif keycode[1] == 'd':  # view right
             self.azimuth += 2
         elif keycode[1] == 'j':  # zoom in
-            self.rend.distance_per_pixel *= 0.95
+            self.distance_per_pixel *= 0.95
         elif keycode[1] == 'k':  # zoom out
-            self.rend.distance_per_pixel /= 0.95
+            self.distance_per_pixel /= 0.95
         elif keycode[1] == 'u':  # decrease contrast
             self.log_offset += 1
         elif keycode[1] == 'i':  # increase contrast
             self.log_offset -= 1
         elif keycode[1] == 'up':  # shift view up
-            self.rend.y_pixel_offset += 5
+            self.y_pixel_offset += 5
         elif keycode[1] == 'down':  # shift view down
-            self.rend.y_pixel_offset -= 5
+            self.y_pixel_offset -= 5
         elif keycode[1] == 'left':  # shift view left
-            self.rend.x_pixel_offset -= 5
+            self.x_pixel_offset -= 5
         elif keycode[1] == 'right':  # shift view right
-            self.rend.x_pixel_offset += 5
+            self.x_pixel_offset += 5
         elif keycode[1] == 'o':  # decreases stepsize, increasing resolution
-            self.rend.stepsize *= 0.8
+            self.stepsize *= 0.8
         elif keycode[1] == 'p':  # increases stepsize, decreasing resolution
-            self.rend.stepsize /= 0.8
+            self.stepsize /= 0.8
         else:
             return
 
         self.update()
 
+    def update_value(self, attrname, val):
+        self._keyboard_open()
+        setattr(self, attrname, val)
+        self.update()
+
     def _on_resize(self, window, width, height):
         self.rend.projection_x_size, self.rend.projection_y_size = width, height
-        self.xsize = width
-        self.ysize = height
-        self.texture = Texture.create(size=(width, height))
-        self.texture.flip_vertical()
         self.update()
 
     def update(self):
-        data = np.log(self.rend.i_render(self.channel, self.azimuth, self.altitude, False))
+        if self.rend is None:
+            return
+        self.rend.distance_per_pixel = self.distance_per_pixel
+        self.rend.stepsize = self.stepsize
+        self.rend.y_pixel_offset = self.y_pixel_offset
+        self.rend.x_pixel_offset = self.x_pixel_offset
+        data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
+                                  opacity=self.rend_opacity, verbose=False)
+        data = np.log(data[0]) if self.rend_opacity else np.log(data)
         data = (data + self.log_offset) * 255 / (data.max() + self.log_offset)
         data = np.clip(data, 0, 255).astype('uint8')
+        self.buffer_array[:data.shape[0], :data.shape[1]] = data
 
-        buf = np.getbuffer(data)
+        buf = np.getbuffer(self.buffer_array)
 
         # then blit the buffer
         self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
-        with self.canvas:
-            self.rect_bg = Rectangle(texture=self.texture, pos=(0, 0),
-                                     size=(self.texture.size))
         self.canvas.ask_update()
 
 
@@ -112,12 +163,11 @@ class RenderApp(App):
         self.rend = rend
 
     def build(self):
-        game = RenderGUI(self.rend)
-        game.update()
-        return game
+        self.game = RenderGUI(self.rend)
+        self.game.update()
+        return self.game
 
 
-def set_renderer(rend, channel):
-    RenderGUI.channel = channel
+def show_renderer(rend):
     app = RenderApp(rend)
     app.run()

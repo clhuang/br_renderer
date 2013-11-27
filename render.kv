@@ -1,0 +1,56 @@
+#:kivy 1.0.9
+
+<RenderGUI>:
+    canvas:
+        Rectangle:
+            id: bg_rect
+            pos: (0,0)
+            texture: root.texture
+            size: root.texture_size
+
+    Label:
+        font_size: 17
+        pos: (13, 12)
+        text: root.data_str
+        halign: 'right'
+
+    NumberSetter:
+        id: channelin
+        pos: (115, 114)
+        size: (40, 20)
+        text: str(root.channel)
+        sonfocus: lambda value: root.update_value('channel', int(self.text)) if not value else None
+
+    MagicCB:
+        id: opacityset
+        pos: (125, 93)
+        size: (20, 20)
+        checkbox_active: lambda cb, value: root.update_value('rend_opacity', value)
+
+    NumberSetter:
+        id: altitudein
+        pos: (115, 72)
+        size: (70, 20)
+        text: "%.2f" % root.altitude
+        sonfocus: lambda value: root.update_value('altitude', float(self.text)) if not value else None
+
+    NumberSetter:
+        id: azimuthin
+        pos: (115, 51)
+        size: (70, 20)
+        text: "%.2f" % root.azimuth
+        sonfocus: lambda value: root.update_value('azimuth', float(self.text)) if not value else None
+
+    NumberSetter:
+        id: dppin
+        pos: (115, 30)
+        size: (70, 20)
+        text: "%.4f" % root.distance_per_pixel
+        sonfocus: lambda value: root.update_value('distance_per_pixel', float(self.text)) if not value else None
+
+    NumberSetter:
+        id: stepsizein
+        pos: (115, 9)
+        size: (70, 20)
+        text: "%.4f" % root.stepsize
+        sonfocus: lambda value: root.update_value('stepsize', float(self.text)) if not value else None

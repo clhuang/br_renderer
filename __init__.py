@@ -12,7 +12,7 @@ BLOCKSIZE = 256
 MAXGRIDSIZE = 10000000
 
 
-class Renderer:
+class Renderer(object):
     '''
     Superclass for rendering 3D models.
 
