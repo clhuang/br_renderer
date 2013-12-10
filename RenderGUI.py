@@ -5,44 +5,20 @@ from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.graphics.texture import Texture
 from kivy.core.window import Window
-from kivy.properties import NumericProperty, BooleanProperty, VariableListProperty
-from kivy.uix.textinput import TextInput
-from kivy.uix.checkbox import CheckBox
+from kivy.properties import NumericProperty, BooleanProperty
 from kivy.uix.dropdown import DropDown
 from kivy.uix.button import Button
+from Tkinter import Tk
+import tkFileDialog
+
+from .. import savearray
 
 kivy.require('1.1.2')
 
+Tk().withdraw()
+
 
 BUF_DIMENSIONS = (3840, 2160)  # supports up to 4k screens
-
-
-class NumberSetter(TextInput):
-    '''
-    Text input that does something on focus
-    '''
-    padding = VariableListProperty([2])
-    input_type = 'number'
-    multiline = False
-
-    def on_focus(self, instance, value, *largs):
-        TextInput.on_focus(self, instance, value, *largs)
-        self.sonfocus(value)
-
-    def sonfocus(self, value):
-        pass
-
-
-class MagicCB(CheckBox):
-    '''
-    Checkbox that does something on change
-    '''
-    def __init__(self, **kwargs):
-        super(MagicCB, self).__init__(**kwargs)
-        self.bind(active=lambda cb, value: self.checkbox_active(cb, value))
-
-    def checkbox_active(self, cb, value):
-        print "hi"
 
 
 class RenderGUI(Widget):
@@ -175,7 +151,7 @@ class RenderGUI(Widget):
         self.rend.x_pixel_offset = self.x_pixel_offset
         data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
                                   opacity=self.rend_opacity, verbose=False)
-        data = np.log10(data[0]) if self.rend_opacity else np.log10(data)
+        data = np.log10(data[0] if self.rend_opacity else data)
         data = (data + self.log_offset) * 255 / (data.max() + self.log_offset)
         data = np.clip(data, 0, 255).astype('uint8')
         self.buffer_array[:data.shape[0], :data.shape[1]] = data
@@ -185,6 +161,35 @@ class RenderGUI(Widget):
         # then blit the buffer
         self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
         self.canvas.ask_update()
+
+    def save_image(self):
+        output_name = tkFileDialog.asksaveasfilename(title='Image Array Filename')
+        if output_name is None:
+            return
+        self.rend.distance_per_pixel = self.distance_per_pixel
+        self.rend.stepsize = self.stepsize
+        self.rend.y_pixel_offset = self.y_pixel_offset
+        self.rend.x_pixel_offset = self.x_pixel_offset
+        data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
+                                  opacity=self.rend_opacity, verbose=False)
+        savearray(output_name, data[0] if self.rend_opacity else data)
+
+    def save_spectra(self):
+        output_name = tkFileDialog.asksaveasfilename(title='Spectra Array Filename')
+        if output_name is None:
+            return
+        self.rend.distance_per_pixel = self.distance_per_pixel
+        self.rend.stepsize = self.stepsize
+        self.rend.y_pixel_offset = self.y_pixel_offset
+        self.rend.x_pixel_offset = self.x_pixel_offset
+        data = self.rend.il_render(self.channel, self.azimuth, -self.altitude,
+                                   opacity=self.rend_opacity, verbose=False)
+        savearray(output_name, data[0])
+
+        output_name = tkFileDialog.asksaveasfilename(title='Frequency Diff Array Filename')
+        if output_name is None:
+            return
+        savearray(output_name, data[1])
 
 
 class RenderApp(App):
