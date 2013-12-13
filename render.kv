@@ -11,19 +11,26 @@
     ToggleButton:
         id: showhelp
         pos: (10, root.height - 40)
-        size: (88, 30)
+        size: (95, 30)
         text: 'Hide help' if self.state == 'down' else 'Show help'
 
     Button:
-        id: saveimage
+        id: showsettings
         pos: (110, root.height - 40)
-        size: (88, 30)
+        size: (95, 30)
+        text: 'Show Settings'
+        on_press: (lambda: setattr(root.s, 'x', 0))()
+
+    Button:
+        id: saveimage
+        pos: (210, root.height - 40)
+        size: (95, 30)
         text: 'Save Image'
         on_press: root.save_image()
 
     Button:
         id: savespectra
-        pos: (210, root.height - 40)
+        pos: (310, root.height - 40)
         size: (95, 30)
         text: 'Save Spectra'
         on_press: root.save_spectra()
@@ -34,70 +41,3 @@
         top: root.height - 70
         valign: 'top'
         text: root.helptext if showhelp.state == 'down' else ""
-
-
-
-
-################## settings
-
-    Label:
-        font_size: 17
-        pos: (13, 22)
-        text: root.data_str
-        halign: 'right'
-
-    CheckBox:
-        id: opacityset
-        pos: (132, 114)
-        size: (20, 20)
-        on_active: (lambda value: root.update_value('rend_opacity', value))(args[1])
-
-    TextInput:
-        id: altitudein
-        padding: 2
-        input_type: 'number'
-        multiline: False
-        pos: (122, 93)
-        size: (70, 20)
-        text: "%.2f" % root.altitude
-        on_focus: (lambda value: root.update_value('altitude', float(self.text)) if not value else None)(args[1])
-
-    TextInput:
-        id: azimuthin
-        padding: 2
-        input_type: 'number'
-        multiline: False
-        pos: (122, 72)
-        size: (70, 20)
-        text: "%.2f" % root.azimuth
-        on_focus: (lambda value: root.update_value('azimuth', float(self.text)) if not value else None)(args[1])
-
-    TextInput:
-        id: dppin
-        padding: 2
-        input_type: 'number'
-        multiline: False
-        pos: (122, 51)
-        size: (70, 20)
-        text: "%.4f" % root.distance_per_pixel
-        on_focus: (lambda value: root.update_value('distance_per_pixel', float(self.text)) if not value else None)(args[1])
-
-    TextInput:
-        id: stepsizein
-        padding: 2
-        input_type: 'number'
-        multiline: False
-        pos: (122, 30)
-        size: (70, 20)
-        text: "%.4f" % root.stepsize
-        on_focus: (lambda value: root.update_value('stepsize', float(self.text)) if not value else None)(args[1])
-
-    TextInput:
-        id: logoffsetin
-        padding: 2
-        input_type: 'number'
-        multiline: False
-        pos: (122, 9)
-        size: (70, 20)
-        text: "%.4f" % root.log_offset
-        on_focus: (lambda value: root.update_value('log_offset', float(self.text)) if not value else None)(args[1])

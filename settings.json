@@ -1,0 +1,51 @@
+[
+    {
+        "type": "options",
+        "title": "Channel",
+        "desc": "Emissions channel to select",
+        "key": "channel",
+        "section": "renderer"
+    },
+    {
+        "type": "bool",
+        "title": "Opacity",
+        "desc": "Whether or not to enable opacity in the simulation",
+        "key": "opacity",
+        "section": "renderer"
+    },
+    {
+        "type": "numeric",
+        "title": "Altitude",
+        "desc": "The POV angle above horizontal",
+        "key": "altitude",
+        "section": "renderer"
+    },
+    {
+        "type": "numeric",
+        "title": "Azimuth",
+        "desc": "The POV angle lateral to the x-axis",
+        "key": "azimuth",
+        "section": "renderer"
+    },
+    {
+        "type": "numeric",
+        "title": "Distance per Pixel",
+        "desc": "Distance in simulation between pixels, specifies magnitude of zoom",
+        "key": "distance_per_pixel",
+        "section": "renderer"
+    },
+    {
+        "type": "numeric",
+        "title": "Step Size",
+        "desc": "Magnitude of the integration stepsize. Increase for performance",
+        "key": "stepsize",
+        "section": "renderer"
+    },
+    {
+        "type": "numeric",
+        "title": "Dynamic Range",
+        "desc": "Number of orders of magnitude to span in the display. Decrease to increase contrast",
+        "key": "log_offset",
+        "section": "renderer"
+    }
+]

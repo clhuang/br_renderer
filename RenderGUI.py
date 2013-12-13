@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 import kivy
 from kivy.app import App
@@ -6,8 +7,8 @@ from kivy.uix.widget import Widget
 from kivy.graphics.texture import Texture
 from kivy.core.window import Window
 from kivy.properties import NumericProperty, BooleanProperty
-from kivy.uix.dropdown import DropDown
-from kivy.uix.button import Button
+from kivy.config import ConfigParser
+from kivy.uix.settings import SettingsWithSpinner
 from Tkinter import Tk
 import tkFileDialog
 
@@ -33,14 +34,6 @@ class RenderGUI(Widget):
     channel = NumericProperty(0)
     log_offset = NumericProperty(6)
 
-    data_str = ('channel:\n'
-                'opacity:\n'
-                'altitude:\n'
-                'azimuth:\n'
-                'dist per pixel:\n'
-                'stepsize:\n'
-                'dynamic range:\n')
-
     helptext = ('Pan l/r: a/d\n'
                 'Tilt u/d: w/s\n'
                 'Zoom in/out: j/k\n'
@@ -63,24 +56,38 @@ class RenderGUI(Widget):
         self.x_pixel_offset = rend.x_pixel_offset
         self.y_pixel_offset = rend.y_pixel_offset
 
-        # channel dropdown menu
-        channeldropdown = DropDown()
-        for index, x in enumerate(self.rend.channellist()):
-            btn = Button(text=x, height=20, size_hint_y=None)
-            btn.index = index  # lambda is broken
-            btn.bind(on_release=lambda btn: channeldropdown.select((btn.text, btn.index)))
-            channeldropdown.add_widget(btn)
-
-        channelddbutton = Button(text=self.rend.channellist()[0], size=(230, 20),
-                                 size_hint=(None, None), pos=(122, 135))
-        channelddbutton.bind(on_release=channeldropdown.open)
-        channeldropdown.bind(on_select=lambda i, x: setattr(channelddbutton, 'text', x[0]) or
-                             self.update_value('channel', x[1]))
-        self.add_widget(channelddbutton)
-
         self._keyboard_open()
         Window.bind(on_resize=self._on_resize)
+
+# Sketch putting in JSON stuff on the fly
+        import json
+        with open(os.path.dirname(os.path.abspath(__file__)) + '/settings.json') as fd:
+            configdata = json.loads(fd.read())
+            configdata[0]['options'] = self.rend.channellist()
+        configdatastr = json.JSONEncoder().encode(configdata)
+
+        config = ConfigParser()
+        config.read(os.path.dirname(os.path.abspath(__file__)) + '/defaults.ini')
+        self.s = SettingsWithSpinner(size=(300, 0))
+        self.s.add_json_panel('Renderer Settings', config, data=configdatastr)
+        self.s.bind(on_config_change=self._settings_change)
+        self.s.bind(on_close=lambda x: setattr(self.s, 'x', -800))
+        self.add_widget(self.s)
+
+#initial update
         self._on_resize(Window, Window.size[0], Window.size[1])
+
+    def _settings_change(self, settings, cparser, section, key, value):
+        self._keyboard_open()
+        if key == 'opacity':
+            self.rend_opacity = (value == '1')
+        elif key == 'channel':
+            self.channel = self.rend.channellist().index(value)
+        elif key in ('altitude', 'azimuth', 'distance_per_pixel', 'stepsize', 'log_offset'):
+            setattr(self, key, float(value))
+        else:
+            return
+        self.update()
 
     def _keyboard_open(self):
         self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
@@ -133,13 +140,9 @@ class RenderGUI(Widget):
 
         self.update()
 
-    def update_value(self, attrname, val):
-        self._keyboard_open()
-        setattr(self, attrname, val)
-        self.update()
-
     def _on_resize(self, window, width, height):
         self.rend.projection_x_size, self.rend.projection_y_size = width, height
+        self.s.size = (self.s.size[0], height)
         self.update()
 
     def update(self):
