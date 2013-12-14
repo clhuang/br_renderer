@@ -1,6 +1,9 @@
 #:kivy 1.0.9
 
 <RenderGUI>:
+    s: settings
+    spanel: settingspanel
+
     canvas:
         Rectangle:
             id: bg_rect
@@ -19,7 +22,7 @@
         pos: (110, root.height - 40)
         size: (95, 30)
         text: 'Show Settings'
-        on_press: (lambda: setattr(root.s, 'x', 0))()
+        on_press: (lambda: setattr(settings, 'x', 0))()
 
     Button:
         id: saveimage
@@ -41,3 +44,15 @@
         top: root.height - 70
         valign: 'top'
         text: root.helptext if showhelp.state == 'down' else ""
+
+    SettingsWithSpinner:
+        id: settings
+        size: (300, 0)
+        x: -800
+        on_config_change: root._settings_change(args[2], args[3], args[4])
+        on_close: setattr(self, 'x', -800)
+
+    SettingsPanel:
+        id: settingspanel
+        settings: settings
+        title: 'Render Settings'

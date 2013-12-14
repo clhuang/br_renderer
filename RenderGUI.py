@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import json
 
 import kivy
 from kivy.app import App
@@ -8,13 +9,13 @@ from kivy.graphics.texture import Texture
 from kivy.core.window import Window
 from kivy.properties import NumericProperty, BooleanProperty
 from kivy.config import ConfigParser
-from kivy.uix.settings import SettingsWithSpinner
+from kivy.uix.settings import SettingsWithSpinner, SettingOptions, SettingNumeric, SettingBoolean
 from Tkinter import Tk
 import tkFileDialog
 
 from .. import savearray
 
-kivy.require('1.1.2')
+kivy.require('1.8.0')
 
 Tk().withdraw()
 
@@ -59,25 +60,52 @@ class RenderGUI(Widget):
         self._keyboard_open()
         Window.bind(on_resize=self._on_resize)
 
-# Sketch putting in JSON stuff on the fly
-        import json
-        with open(os.path.dirname(os.path.abspath(__file__)) + '/settings.json') as fd:
-            configdata = json.loads(fd.read())
-            configdata[0]['options'] = self.rend.channellist()
-        configdatastr = json.JSONEncoder().encode(configdata)
-
         config = ConfigParser()
         config.read(os.path.dirname(os.path.abspath(__file__)) + '/defaults.ini')
-        self.s = SettingsWithSpinner(size=(300, 0))
-        self.s.add_json_panel('Renderer Settings', config, data=configdatastr)
-        self.s.bind(on_config_change=self._settings_change)
-        self.s.bind(on_close=lambda x: setattr(self.s, 'x', -800))
-        self.add_widget(self.s)
+        self.remove_widget(self.spanel)
+        self.spanel.config = config
+        self.spanel.add_widget(SettingOptions(title='Channel',
+                                              desc='Emissions channel to select',
+                                              key='channel',
+                                              section='renderer',
+                                              options=self.rend.channellist(),
+                                              panel=self.spanel))
+        self.spanel.add_widget(SettingBoolean(title='Opacity',
+                                              desc='Whether or not to enable opacity in the simulation',
+                                              key='opacity',
+                                              section='renderer',
+                                              panel=self.spanel))
+        self.spanel.add_widget(SettingNumeric(title='Altitude',
+                                              desc='The POV angle above horizontal',
+                                              key='altitude',
+                                              section='renderer',
+                                              panel=self.spanel))
+        self.spanel.add_widget(SettingNumeric(title='Azimuth',
+                                              desc='The POV angle lateral to the x-axis',
+                                              key='azimuth',
+                                              section='renderer',
+                                              panel=self.spanel))
+        self.spanel.add_widget(SettingNumeric(title='Distance per Pixel',
+                                              desc='Distance in simulation between pixels, specifies zoom',
+                                              key='distance_per_pixel',
+                                              section='renderer',
+                                              panel=self.spanel))
+        self.spanel.add_widget(SettingNumeric(title='Step Size',
+                                              desc='Magnitude of the integration stepsize, increase for performance',
+                                              key='stepsize',
+                                              section='renderer',
+                                              panel=self.spanel))
+        self.spanel.add_widget(SettingNumeric(title='Dynamic Range',
+                                              desc='Orders of magnitude to span in display',
+                                              key='log_offset',
+                                              section='renderer',
+                                              panel=self.spanel))
+        self.s.interface.add_panel(self.spanel, 'Renderer Settings', self.spanel.uid)
 
 #initial update
         self._on_resize(Window, Window.size[0], Window.size[1])
 
-    def _settings_change(self, settings, cparser, section, key, value):
+    def _settings_change(self, section, key, value):
         self._keyboard_open()
         if key == 'opacity':
             self.rend_opacity = (value == '1')
@@ -197,7 +225,7 @@ class RenderGUI(Widget):
 
 class RenderApp(App):
     def __init__(self, rend):
-        super(RenderApp, self).__init__()
+        super(RenderApp, self).__init__(use_kivy_settings=False)
         self.rend = rend
 
     def build(self):
