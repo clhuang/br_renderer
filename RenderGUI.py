@@ -1,6 +1,4 @@
 import numpy as np
-import os
-import json
 
 import kivy
 from kivy.app import App
@@ -9,7 +7,7 @@ from kivy.graphics.texture import Texture
 from kivy.core.window import Window
 from kivy.properties import NumericProperty, BooleanProperty
 from kivy.config import ConfigParser
-from kivy.uix.settings import SettingsWithSpinner, SettingOptions, SettingNumeric, SettingBoolean
+from kivy.uix.settings import SettingOptions, SettingNumeric, SettingBoolean
 from Tkinter import Tk
 import tkFileDialog
 
@@ -43,6 +41,7 @@ class RenderGUI(Widget):
                 'Recenter shift: c\n'
                 'Dynamic range inc/dec: i/u\n'
                 'Stepsize inc/dec: p/o\n')
+    initialized = False
 
     def __init__(self, rend, **kwargs):
         self.texture = Texture.create(size=BUF_DIMENSIONS)
@@ -57,58 +56,80 @@ class RenderGUI(Widget):
         self.x_pixel_offset = rend.x_pixel_offset
         self.y_pixel_offset = rend.y_pixel_offset
 
-        self._keyboard_open()
-        Window.bind(on_resize=self._on_resize)
-
-        config = ConfigParser()
-        config.read(os.path.dirname(os.path.abspath(__file__)) + '/defaults.ini')
+        self.config = ConfigParser()
+        self.config.setdefaults('renderer', {'channel': self.rend.channellist()[0],
+                                             'snap': self.rend.snap,
+                                             'opacity': 0,
+                                             'altitude': self.altitude,
+                                             'azimuth': self.azimuth,
+                                             'distance_per_pixel': self.distance_per_pixel,
+                                             'log_offset': self.log_offset,
+                                             'stepsize': self.stepsize})
         self.remove_widget(self.spanel)
-        self.spanel.config = config
-        self.spanel.add_widget(SettingOptions(title='Channel',
-                                              desc='Emissions channel to select',
-                                              key='channel',
-                                              section='renderer',
-                                              options=self.rend.channellist(),
-                                              panel=self.spanel))
-        self.spanel.add_widget(SettingBoolean(title='Opacity',
-                                              desc='Whether or not to enable opacity in the simulation',
-                                              key='opacity',
-                                              section='renderer',
-                                              panel=self.spanel))
-        self.spanel.add_widget(SettingNumeric(title='Altitude',
-                                              desc='The POV angle above horizontal',
-                                              key='altitude',
-                                              section='renderer',
-                                              panel=self.spanel))
-        self.spanel.add_widget(SettingNumeric(title='Azimuth',
-                                              desc='The POV angle lateral to the x-axis',
-                                              key='azimuth',
-                                              section='renderer',
-                                              panel=self.spanel))
-        self.spanel.add_widget(SettingNumeric(title='Distance per Pixel',
-                                              desc='Distance in simulation between pixels, specifies zoom',
-                                              key='distance_per_pixel',
-                                              section='renderer',
-                                              panel=self.spanel))
-        self.spanel.add_widget(SettingNumeric(title='Step Size',
-                                              desc='Magnitude of the integration stepsize, increase for performance',
-                                              key='stepsize',
-                                              section='renderer',
-                                              panel=self.spanel))
-        self.spanel.add_widget(SettingNumeric(title='Dynamic Range',
-                                              desc='Orders of magnitude to span in display',
-                                              key='log_offset',
-                                              section='renderer',
-                                              panel=self.spanel))
+        self.spanel.config = self.config
+        self.chan_opt = SettingOptions(title='Channel',
+                                       desc='Emissions channel to select',
+                                       key='channel',
+                                       section='renderer',
+                                       options=self.rend.channellist(),
+                                       panel=self.spanel)
+        self.spanel.add_widget(self.chan_opt)
+        self.snap_opt = SettingNumeric(title='Snap',
+                                       desc='Snap number to select',
+                                       key='snap',
+                                       section='renderer',
+                                       panel=self.spanel)
+        self.spanel.add_widget(self.snap_opt)
+        self.opa_opt = SettingBoolean(title='Opacity',
+                                      desc='Whether or not to enable opacity in the simulation',
+                                      key='opacity',
+                                      section='renderer',
+                                      panel=self.spanel)
+        self.spanel.add_widget(self.opa_opt)
+        self.alt_opt = SettingNumeric(title='Altitude',
+                                      desc='The POV angle above horizontal',
+                                      key='altitude',
+                                      section='renderer',
+                                      panel=self.spanel)
+        self.spanel.add_widget(self.alt_opt)
+        self.azi_opt = SettingNumeric(title='Azimuth',
+                                      desc='The POV angle lateral to the x-axis',
+                                      key='azimuth',
+                                      section='renderer',
+                                      panel=self.spanel)
+        self.spanel.add_widget(self.azi_opt)
+        self.dpp_opt = SettingNumeric(title='Distance per Pixel',
+                                      desc='Distance in simulation between pixels, specifies zoom',
+                                      key='distance_per_pixel',
+                                      section='renderer',
+                                      panel=self.spanel)
+        self.spanel.add_widget(self.dpp_opt)
+        self.stp_opt = SettingNumeric(title='Step Size',
+                                      desc='Magnitude of the integration stepsize, increase for performance',
+                                      key='stepsize',
+                                      section='renderer',
+                                      panel=self.spanel)
+        self.spanel.add_widget(self.stp_opt)
+        self.range_opt = SettingNumeric(title='Dynamic Range',
+                                        desc='Orders of magnitude to span in display',
+                                        key='log_offset',
+                                        section='renderer',
+                                        panel=self.spanel)
+        self.spanel.add_widget(self.range_opt)
         self.s.interface.add_panel(self.spanel, 'Renderer Settings', self.spanel.uid)
 
+        self._keyboard_open()
+        Window.bind(on_resize=self._on_resize)
 #initial update
         self._on_resize(Window, Window.size[0], Window.size[1])
+        self.initialized = True
 
     def _settings_change(self, section, key, value):
         self._keyboard_open()
         if key == 'opacity':
             self.rend_opacity = (value == '1')
+        elif key == 'snap':
+            self.rend.set_snap(int(value))
         elif key == 'channel':
             self.channel = self.rend.channellist().index(value)
         elif key in ('altitude', 'azimuth', 'distance_per_pixel', 'stepsize', 'log_offset'):
@@ -127,15 +148,9 @@ class RenderGUI(Widget):
 
     def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
         if keycode[1] == 'w':  # view up
-            if self.altitude < 90:
-                self.altitude += 2
-            else:
-                return
+            self.altitude += 2
         elif keycode[1] == 's':  # view down
-            if self.altitude > -90:
-                self.altitude -= 2
-            else:
-                return
+            self.altitude -= 2
         elif keycode[1] == 'a':  # view left
             self.azimuth -= 2
         elif keycode[1] == 'd':  # view right
@@ -174,8 +189,10 @@ class RenderGUI(Widget):
         self.update()
 
     def update(self):
-        if self.rend is None:
+        if not self.initialized:
             return
+        self.azimuth = self.azimuth % 360
+        self.altitude = sorted((-90, self.altitude, 90))[1]
         self.rend.distance_per_pixel = self.distance_per_pixel
         self.rend.stepsize = self.stepsize
         self.rend.y_pixel_offset = self.y_pixel_offset
@@ -191,6 +208,12 @@ class RenderGUI(Widget):
 
         # then blit the buffer
         self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
+
+        self.azi_opt.value = str(self.azimuth)
+        self.alt_opt.value = str(self.altitude)
+        self.range_opt.value = str(self.log_offset)
+        self.dpp_opt.value = str(round(self.distance_per_pixel, 6))
+        self.stp_opt.value = str(round(self.stepsize, 6))
         self.canvas.ask_update()
 
     def save_image(self):
