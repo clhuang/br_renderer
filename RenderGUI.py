@@ -204,7 +204,7 @@ class RenderGUI(Widget):
 #limit some values
         self.azimuth = self.azimuth % 360
         self.altitude = sorted((-90, self.altitude, 90))[1]
-        self.snap = sorted(self.rend.snap_range + [self.snap])[1]
+        self.snap = sorted(self.rend.snap_range + (self.snap,))[1]
 
 #set values in renderer, and render
         self.rend.distance_per_pixel = self.distance_per_pixel
