@@ -234,7 +234,7 @@ class RenderGUI(Widget):
 
     def save_image(self):
         output_name = tkFileDialog.asksaveasfilename(title='Image Array Filename')
-        if output_name is None or output_name == '':
+        if not output_name:
             return
         self.rend.distance_per_pixel = self.distance_per_pixel
         self.rend.stepsize = self.stepsize
@@ -246,7 +246,7 @@ class RenderGUI(Widget):
 
     def save_spectra(self):
         output_name = tkFileDialog.asksaveasfilename(title='Spectra Array Filename')
-        if output_name is None or output_name == '':
+        if not output_name:
             return
         self.rend.distance_per_pixel = self.distance_per_pixel
         self.rend.stepsize = self.stepsize
