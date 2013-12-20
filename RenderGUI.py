@@ -11,8 +11,6 @@ from kivy.uix.settings import SettingOptions, SettingNumeric, SettingBoolean
 from Tkinter import Tk
 import tkFileDialog
 
-from .. import savearray
-
 kivy.require('1.8.0')
 
 Tk().withdraw()
@@ -244,7 +242,7 @@ class RenderGUI(Widget):
         self.rend.x_pixel_offset = self.x_pixel_offset
         data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
                                   opacity=self.rend_opacity, verbose=False)
-        savearray(output_name, data[0] if self.rend_opacity else data)
+        self.rend.save_irender(output_name, data[0] if self.rend_opacity else data)
 
     def save_spectra(self):
         output_name = tkFileDialog.asksaveasfilename(title='Spectra Array Filename')
@@ -256,12 +254,7 @@ class RenderGUI(Widget):
         self.rend.x_pixel_offset = self.x_pixel_offset
         data = self.rend.il_render(self.channel, self.azimuth, -self.altitude,
                                    opacity=self.rend_opacity, verbose=False)
-        savearray(output_name, data[0])
-
-        output_name = tkFileDialog.asksaveasfilename(title='Frequency Diff Array Filename')
-        if output_name is None or output_name == '':
-            return
-        savearray(output_name, data[1])
+        self.rend.save_ilrender(output_name, data)
 
 
 class RenderApp(App):
