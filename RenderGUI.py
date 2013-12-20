@@ -32,6 +32,7 @@ class RenderGUI(Widget):
     rend_opacity = BooleanProperty(False)
     channel = NumericProperty(0)
     log_offset = NumericProperty(6)
+    snap = NumericProperty(0)
 
     helptext = ('Pan l/r: a/d\n'
                 'Tilt u/d: w/s\n'
@@ -40,7 +41,9 @@ class RenderGUI(Widget):
                 'Shift u/d: [up]/[down]\n'
                 'Recenter shift: c\n'
                 'Dynamic range inc/dec: i/u\n'
-                'Stepsize inc/dec: p/o\n')
+                'Stepsize inc/dec: ./,\n'
+                'Toggle opacity: o\n'
+                'Change timestep: [/]')
     initialized = False
 
     def __init__(self, rend, **kwargs):
@@ -55,6 +58,7 @@ class RenderGUI(Widget):
 
         self.x_pixel_offset = rend.x_pixel_offset
         self.y_pixel_offset = rend.y_pixel_offset
+        self.snap = self.rend.snap
 
         self.config = ConfigParser()
         self.config.setdefaults('renderer', {'channel': self.rend.channellist()[0],
@@ -129,7 +133,7 @@ class RenderGUI(Widget):
         if key == 'opacity':
             self.rend_opacity = (value == '1')
         elif key == 'snap':
-            self.rend.set_snap(int(value))
+            self.snap = int(value)
         elif key == 'channel':
             self.channel = self.rend.channellist().index(value)
         elif key in ('altitude', 'azimuth', 'distance_per_pixel', 'stepsize', 'log_offset'):
@@ -174,10 +178,16 @@ class RenderGUI(Widget):
             self.x_pixel_offset += 5
         elif keycode[1] == 'c':
             self.x_pixel_offset = self.y_pixel_offset = 0
-        elif keycode[1] == 'o':  # decreases stepsize, increasing resolution
+        elif keycode[1] == ',':  # decreases stepsize, increasing resolution
             self.stepsize *= 0.8
-        elif keycode[1] == 'p':  # increases stepsize, decreasing resolution
+        elif keycode[1] == '.':  # increases stepsize, decreasing resolution
             self.stepsize /= 0.8
+        elif keycode[1] == '[':  # go back 1 snap
+            self.snap -= 1
+        elif keycode[1] == ']':  # go forward 1 snap
+            self.snap += 1
+        elif keycode[1] == 'o':  # toggle opacity
+            self.rend_opacity = not self.rend_opacity
         else:
             return
 
@@ -191,12 +201,17 @@ class RenderGUI(Widget):
     def update(self):
         if not self.initialized:
             return
+#limit some values
         self.azimuth = self.azimuth % 360
         self.altitude = sorted((-90, self.altitude, 90))[1]
+        self.snap = sorted(self.rend.snap_range + [self.snap])[1]
+
+#set values in renderer, and render
         self.rend.distance_per_pixel = self.distance_per_pixel
         self.rend.stepsize = self.stepsize
         self.rend.y_pixel_offset = self.y_pixel_offset
         self.rend.x_pixel_offset = self.x_pixel_offset
+        self.rend.set_snap(self.snap)
         data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
                                   opacity=self.rend_opacity, verbose=False)
         data = np.log10(data[0] if self.rend_opacity else data)
@@ -209,11 +224,14 @@ class RenderGUI(Widget):
         # then blit the buffer
         self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
 
+#update values in GUI
         self.azi_opt.value = str(self.azimuth)
         self.alt_opt.value = str(self.altitude)
         self.range_opt.value = str(self.log_offset)
         self.dpp_opt.value = str(round(self.distance_per_pixel, 6))
         self.stp_opt.value = str(round(self.stepsize, 6))
+        self.opa_opt.value = '1' if self.rend_opacity else '0'
+        self.snap_opt.value = str(self.rend.snap)
         self.canvas.ask_update()
 
     def save_image(self):
