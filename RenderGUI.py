@@ -218,7 +218,7 @@ class RenderGUI(Widget):
 
     def save_image(self):
         output_name = tkFileDialog.asksaveasfilename(title='Image Array Filename')
-        if output_name is None:
+        if output_name is None or output_name == '':
             return
         self.rend.distance_per_pixel = self.distance_per_pixel
         self.rend.stepsize = self.stepsize
@@ -230,7 +230,7 @@ class RenderGUI(Widget):
 
     def save_spectra(self):
         output_name = tkFileDialog.asksaveasfilename(title='Spectra Array Filename')
-        if output_name is None:
+        if output_name is None or output_name == '':
             return
         self.rend.distance_per_pixel = self.distance_per_pixel
         self.rend.stepsize = self.stepsize
@@ -241,7 +241,7 @@ class RenderGUI(Widget):
         savearray(output_name, data[0])
 
         output_name = tkFileDialog.asksaveasfilename(title='Frequency Diff Array Filename')
-        if output_name is None:
+        if output_name is None or output_name == '':
             return
         savearray(output_name, data[1])
 
