@@ -1,4 +1,5 @@
 import numpy as np
+from string import Template
 
 import kivy
 from kivy.app import App
@@ -7,7 +8,8 @@ from kivy.graphics.texture import Texture
 from kivy.core.window import Window
 from kivy.properties import NumericProperty, BooleanProperty
 from kivy.config import ConfigParser
-from kivy.uix.settings import SettingOptions, SettingNumeric, SettingBoolean
+from kivy.uix.settings import SettingsPanel, SettingOptions, SettingNumeric, SettingBoolean
+from kivy.uix.popup import Popup
 from Tkinter import Tk
 import tkFileDialog
 
@@ -34,7 +36,7 @@ class RenderGUI(Widget):
 
     helptext = ('Pan l/r: a/d\n'
                 'Tilt u/d: w/s\n'
-                'Zoom in/out: j/k\n'
+                'zoom in/out: j/k\n'
                 'Shift l/r: [left]/[right]\n'
                 'Shift u/d: [up]/[down]\n'
                 'Recenter shift: c\n'
@@ -45,6 +47,7 @@ class RenderGUI(Widget):
     initialized = False
 
     def __init__(self, rend, **kwargs):
+        import os.path
         self.texture = Texture.create(size=BUF_DIMENSIONS)
         self.texture_size = BUF_DIMENSIONS
         super(RenderGUI, self).__init__(**kwargs)
@@ -59,7 +62,8 @@ class RenderGUI(Widget):
         self.snap = self.rend.snap
 
         self.config = ConfigParser()
-        self.config.setdefaults('renderer', {'channel': self.rend.channellist()[0],
+        self.channellist = [os.path.basename(os.path.splitext(a)[0]) for a in self.rend.channellist()]
+        self.config.setdefaults('renderer', {'channel': self.channellist[0],
                                              'snap': self.rend.snap,
                                              'opacity': 0,
                                              'altitude': self.altitude,
@@ -67,13 +71,12 @@ class RenderGUI(Widget):
                                              'distance_per_pixel': self.distance_per_pixel,
                                              'log_offset': self.log_offset,
                                              'stepsize': self.stepsize})
-        self.remove_widget(self.spanel)
-        self.spanel.config = self.config
+        self.spanel = SettingsPanel(settings=self.s, title='Render Settings', config=self.config)
         self.chan_opt = SettingOptions(title='Channel',
                                        desc='Emissions channel to select',
                                        key='channel',
                                        section='renderer',
-                                       options=self.rend.channellist(),
+                                       options=self.channellist,
                                        panel=self.spanel)
         self.spanel.add_widget(self.chan_opt)
         self.snap_opt = SettingNumeric(title='Snap',
@@ -124,6 +127,8 @@ class RenderGUI(Widget):
         Window.bind(on_resize=self._on_resize)
 #initial update
         self._on_resize(Window, Window.size[0], Window.size[1])
+        self.saverangedialog = SaveRangeDialog(self, size_hint=(.8, .8), title="Save Range")
+
         self.initialized = True
 
     def _settings_change(self, section, key, value):
@@ -133,7 +138,7 @@ class RenderGUI(Widget):
         elif key == 'snap':
             self.snap = int(value)
         elif key == 'channel':
-            self.channel = self.rend.channellist().index(value)
+            self.channel = self.channellist.index(value)
         elif key in ('altitude', 'azimuth', 'distance_per_pixel', 'stepsize', 'log_offset'):
             setattr(self, key, float(value))
         else:
@@ -255,6 +260,54 @@ class RenderGUI(Widget):
         data = self.rend.il_render(self.channel, self.azimuth, -self.altitude,
                                    opacity=self.rend_opacity, verbose=False)
         self.rend.save_ilrender(output_name, data)
+
+    def save_range(self):
+        self.saverangedialog.rend_choice = None
+        self.saverangedialog.open()
+
+    def _renderrangefromdialog(self, srd, choice):
+        snap_bounds = sorted((int(srd.slider_snapmin.value), int(srd.slider_snapmax.value)))
+        snap_skip = int(srd.slider_snapskip.value)
+        snap_range = range(snap_bounds[0], snap_bounds[1], snap_skip)
+        channellist = self.channellist
+        channel_ids = [channellist.index(lib.text) for lib in srd.channelselect.adapter.selection]
+        save_loc = srd.savefilename.text
+        save_loct = Template(save_loc)
+        if len(snap_range) > 1 and '${num}' not in save_loc or len(channel_ids) > 1 and '${chan}' not in save_loc:
+            ed = ErrorDialog()
+            ed.errortext = 'Missing "${num}" or "${chan}" in file descriptor'
+            ed.open()
+            return
+
+        for snap in snap_range:
+            for channel_id in channel_ids:
+                save_file = save_loct.substitute(num=str(snap), chan=channellist[channel_id])
+
+                self.rend.set_snap(snap)
+                if choice == 'il':
+                    data = self.rend.il_render(self.channel, self.azimuth, -self.altitude,
+                                               opacity=self.rend_opacity, verbose=False)
+                    self.rend.save_ilrender(save_file, data)
+                elif choice == 'i':
+                    data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
+                                              opacity=self.rend_opacity, verbose=False)
+                    if self.rend_opacity:
+                        data = data[0]
+                    self.rend.save_irender(save_file, data)
+
+        srd.dismiss()
+
+
+class SaveRangeDialog(Popup):
+    def __init__(self, render_widget, **kwargs):
+        self.render_widget = render_widget
+        self.channellist = render_widget.channellist
+        self.snap_range = render_widget.rend.snap_range
+        super(SaveRangeDialog, self).__init__(**kwargs)
+
+
+class ErrorDialog(Popup):
+    pass
 
 
 class RenderApp(App):
