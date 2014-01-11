@@ -40,6 +40,8 @@ class Renderer(object):
     xaxis = yaxis = zaxis = ixaxis = iyaxis = izaxis = None
     textures = {}  # stores references to textures to prevent them being cleared
 
+    progress = (0, 0)
+
     def load_texture(self, name, arr):
         '''
         Loads an array into a texture with a name.
@@ -95,6 +97,7 @@ class Renderer(object):
         spec_render(self, blocksize, gridsize)
         and is where the CUDA kernel is actually called.
         '''
+
         self.clear_textures()
         view_x, view_y, view_vector = view_axes(azimuth, altitude)
 
@@ -126,6 +129,7 @@ class Renderer(object):
         self.load_constant('yPixelOffset', np.float32(self.y_pixel_offset))
 
         for i in xrange(numsplits):
+            self.progress = (i, numsplits)
             xstart = i * xsplitsize
             if xstart + xsplitsize > self.xaxis.size:
                 xsplitsize = self.xaxis.size - xstart
@@ -145,6 +149,8 @@ class Renderer(object):
             self.load_constant('sliceWidth', np.int32(xsplitsize))
 
             spec_render(self, BLOCKSIZE, grid_size)
+
+        self.progress = (0, 0)
 
     def __init__(self, cuda_code):
         '''

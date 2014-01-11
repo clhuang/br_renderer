@@ -1,8 +1,10 @@
+from __future__ import print_function
 import numpy as np
 from string import Template
 
 import kivy
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.uix.widget import Widget
 from kivy.graphics.texture import Texture
 from kivy.core.window import Window
@@ -10,6 +12,7 @@ from kivy.properties import NumericProperty, BooleanProperty
 from kivy.config import ConfigParser
 from kivy.uix.settings import SettingsPanel, SettingOptions, SettingNumeric, SettingBoolean
 from kivy.uix.popup import Popup
+from kivy.uix.progressbar import ProgressBar
 from Tkinter import Tk
 import tkFileDialog
 
@@ -45,6 +48,7 @@ class RenderGUI(Widget):
                 'Toggle opacity: o\n'
                 'Change timestep: [/]')
     initialized = False
+    renderrange_progress = (0, 0)
 
     def __init__(self, rend, **kwargs):
         import os.path
@@ -266,6 +270,11 @@ class RenderGUI(Widget):
         self.saverangedialog.open()
 
     def _renderrangefromdialog(self, srd, choice):
+        import multiprocessing
+        multiprocessing.Process(target=self._renderrangefromdialog2, args=(srd, choice)).start()
+        #self._renderrangefromdialog2(srd, choice)
+
+    def _renderrangefromdialog2(self, srd, choice):
         snap_bounds = sorted((int(srd.slider_snapmin.value), int(srd.slider_snapmax.value)))
         snap_skip = int(srd.slider_snapskip.value)
         snap_range = range(snap_bounds[0], snap_bounds[1], snap_skip)
@@ -279,8 +288,13 @@ class RenderGUI(Widget):
             ed.open()
             return
 
+        finished_count = 0
+        total_renders = len(snap_range) * len(channel_ids)
+
         for snap in snap_range:
             for channel_id in channel_ids:
+                self.renderrange_progress = (finished_count, total_renders)
+                print(snap_range, self.channel, self.azimuth, self.altitude, self.rend_opacity)
                 save_file = save_loct.substitute(num=str(snap), chan=channellist[channel_id])
 
                 self.rend.set_snap(snap)
@@ -295,7 +309,30 @@ class RenderGUI(Widget):
                         data = data[0]
                     self.rend.save_irender(save_file, data)
 
-        srd.dismiss()
+        self.renderrange_progress = (0, 0)
+
+
+class ProgressBarUpdating(ProgressBar):
+    def __init__(self, update_interval=0.03, **kwargs):
+        self.update_interval = update_interval
+        super(ProgressBarUpdating, self).__init__(**kwargs)
+        self.orig_y = self.y
+        self.max = 1
+        Clock.schedule_interval(self.update, update_interval)
+
+    def update(self, dt):
+        value, max = self.check_progress()
+        if max == 0:
+            #self.y = -10000  # hide
+            pass
+        else:
+            self.y = self.orig_y
+            value *= (0.94 / max)
+            self.value = value + 0.06
+
+    def check_progress(self):
+        import time
+        return (time.time() % 10 * 10, 100)
 
 
 class SaveRangeDialog(Popup):

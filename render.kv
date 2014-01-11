@@ -83,8 +83,11 @@
             Button:
                 text: 'Save Spectra'
                 on_press: root.render_widget._renderrangefromdialog(root, 'il')
+        ProgressBarUpdating:
+            width: root.width
+            check_progress: lambda: root.render_widget.renderrange_progress
 
-<ErrorDialog>
+<ErrorDialog>:
     title: 'Error'
     errortext: ''
     size_hint: (0.3, 0.3)
@@ -100,6 +103,9 @@
             pos_hint: {'x': 0.3, 'y': 0}
             text: 'Close'
             on_press: root.dismiss()
+
+<ProgressBarUpdating>:
+    y: 50
 
 <RenderGUI>:
     s: settings
@@ -157,3 +163,4 @@
         x: -800
         on_config_change: root._settings_change(args[2], args[3], args[4])
         on_close: setattr(self, 'x', -800)
+
