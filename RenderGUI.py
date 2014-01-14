@@ -1,6 +1,7 @@
 from __future__ import print_function
 import numpy as np
 from string import Template
+from threading import Thread
 
 import kivy
 from kivy.app import App
@@ -26,6 +27,7 @@ BUF_DIMENSIONS = (3840, 2160)  # supports up to 4k screens
 
 class RenderGUI(Widget):
     rend = None
+    display_data = None
     azimuth = NumericProperty(20.0)
     altitude = NumericProperty(20.0)
     distance_per_pixel = NumericProperty(0.0)
@@ -217,6 +219,7 @@ class RenderGUI(Widget):
             return
         if lock and not self.rend.condition.acquire(block):
             return
+        self.rend.output_for_display = True
 #limit some values
         self.azimuth = self.azimuth % 360
         self.altitude = sorted((-90, self.altitude, 90))[1]
@@ -244,12 +247,12 @@ class RenderGUI(Widget):
         self.rend.condition.release()
 
     def update_display(self):
-        if self.update_display_enabled and self.rend.output is not None and self.rend.output != "":
+        if self.update_display_enabled and self.rend.output_for_display and \
+           self.rend.output is not None and self.rend.output is not self.display_data:
             if self.rend.condition.acquire(False):
-                data = self.rend.output
-                self.rend.output = ""
+                self.display_data = self.rend.output
 
-                data = data[0] if isinstance(data, tuple) else data
+                data = self.display_data[0] if isinstance(self.display_data, tuple) else self.display_data
                 if len(data.shape) != 2:
                     return
                 data = np.log10(data)
@@ -262,23 +265,39 @@ class RenderGUI(Widget):
                 # then blit the buffer
                 self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
                 self.canvas.ask_update()
-            self.rend.condition.release()
+                self.rend.condition.release()
 
     def save_image(self):
         output_name = tkFileDialog.asksaveasfilename(title='Image Array Filename')
         if not output_name:
             return
-        data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
-                                  opacity=self.rend_opacity, verbose=False)
-        self.rend.save_irender(output_name, data[0] if self.rend_opacity else data)
+        Thread(target=self._irender_save, args=(output_name, )).start()
 
     def save_spectra(self):
         output_name = tkFileDialog.asksaveasfilename(title='Spectra Array Filename')
         if not output_name:
             return
-        data = self.rend.il_render(self.channel, self.azimuth, -self.altitude,
-                                   opacity=self.rend_opacity, verbose=False)
-        self.rend.save_ilrender(output_name, data)
+        Thread(target=self._ilrender_save, args=(output_name, )).start()
+
+    def _irender_save(self, output_name):
+        self.rend.condition.acquire()
+        self.rend.output = None
+        self.rend.output_for_display = False
+        self.rend.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
+                                    dict(opacity=self.rend_opacity, verbose=False))
+        self.rend.condition.wait()
+        self.rend.save_irender(output_name, self.rend.output[0] if self.rend_opacity else self.rend.output)
+        self.rend.condition.release()
+
+    def _ilrender_save(self, output_name):
+        self.rend.condition.acquire()
+        self.rend.output = None
+        self.rend.output_for_display = False
+        self.rend.render_command = ('il_render', (self.channel, self.azimuth, -self.altitude),
+                                    dict(opacity=self.rend_opacity, verbose=False))
+        self.rend.condition.wait()
+        self.rend.save_ilrender(output_name, self.rend.output)
+        self.rend.condition.release()
 
     def save_range(self):
         self.saverangedialog.rend_choice = None
@@ -298,28 +317,25 @@ class RenderGUI(Widget):
             ed.open()
             return
 
-        finished_count = 0
         total_renders = len(snap_range) * len(channel_ids)
 
-        for snap in snap_range:
-            for channel_id in channel_ids:
-                self.renderrange_progress = (finished_count, total_renders)
-                print(snap_range, self.channel, self.azimuth, self.altitude, self.rend_opacity)
-                save_file = save_loct.substitute(num=str(snap), chan=channellist[channel_id])
+        def saveloop():
+            finished_count = 0
+            for snap in snap_range:
+                for channel_id in channel_ids:
+                    finished_count += 1
+                    self.renderrange_progress = (finished_count, total_renders)
+                    print(snap_range, self.channel, self.azimuth, self.altitude, self.rend_opacity)
+                    save_file = save_loct.substitute(num=str(snap), chan=channellist[channel_id])
 
-                self.rend.set_snap(snap)
-                if choice == 'il':
-                    data = self.rend.il_render(self.channel, self.azimuth, -self.altitude,
-                                               opacity=self.rend_opacity, verbose=False)
-                    self.rend.save_ilrender(save_file, data)
-                elif choice == 'i':
-                    data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
-                                              opacity=self.rend_opacity, verbose=False)
-                    if self.rend_opacity:
-                        data = data[0]
-                    self.rend.save_irender(save_file, data)
+                    self.rend.set_snap(snap)
+                    if choice == 'il':
+                        self._ilrender_save(save_file)
+                    elif choice == 'i':
+                        self._irender_save(save_file)
+            self.renderrange_progress = (0, 0)
 
-        self.renderrange_progress = (0, 0)
+        Thread(target=saveloop).start()
 
 
 class ProgressBarUpdating(ProgressBar):
@@ -365,6 +381,10 @@ class RenderApp(App):
         game = RenderGUI(self.rend)
         game.update()
         return game
+
+    def on_close(self):
+        from RendererController import cleanup
+        cleanup()
 
 
 def show_renderer(rend):
