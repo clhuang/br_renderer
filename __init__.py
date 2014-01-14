@@ -157,7 +157,12 @@ class Renderer(object):
 
         CUDA kernel should include renderer.h to utilize this
         '''
-        import pycuda.autoinit
+        cuda.init()
+
+        from pycuda.tools import make_default_context
+        global context
+        self.context = make_default_context()
+
         self.cuda_code = cuda_code
 
     def set_axes(self, xaxis, yaxis, zaxis):

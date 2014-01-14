@@ -52,6 +52,9 @@ class RenderGUI(Widget):
     initialized = False
     renderrange_progress = (0, 0)
 
+    def _cleanup(self, _):
+        self.rend.controller.stop()
+
     def __init__(self, renderer, **kwargs):
         import os.path
         self.texture = Texture.create(size=BUF_DIMENSIONS)
@@ -131,6 +134,7 @@ class RenderGUI(Widget):
 
         self._keyboard_open()
         Window.bind(on_resize=self._on_resize)
+        Window.bind(on_close=self._cleanup)
 #initial update
         self._on_resize(Window, Window.size[0], Window.size[1])
         self.saverangedialog = SaveRangeDialog(self, size_hint=(.8, .8), title="Save Range")
@@ -382,9 +386,6 @@ class RenderApp(App):
         game.update()
         return game
 
-    def on_close(self):
-        from RendererController import cleanup
-        cleanup()
 
 
 def show_renderer(rend):
