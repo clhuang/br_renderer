@@ -50,25 +50,25 @@ class RenderGUI(Widget):
     initialized = False
     renderrange_progress = (0, 0)
 
-    def __init__(self, rend, **kwargs):
+    def __init__(self, renderer, **kwargs):
         import os.path
         self.texture = Texture.create(size=BUF_DIMENSIONS)
         self.texture_size = BUF_DIMENSIONS
         super(RenderGUI, self).__init__(**kwargs)
 
-        self.rend = rend
+        self.rend = renderer
         self.buffer_array = np.empty(BUF_DIMENSIONS[::-1], dtype='uint8')
         self.distance_per_pixel = self.rend.distance_per_pixel
         self.stepsize = self.rend.stepsize
 
-        self.x_pixel_offset = rend.x_pixel_offset
-        self.y_pixel_offset = rend.y_pixel_offset
+        self.x_pixel_offset = 0
+        self.y_pixel_offset = 0
         self.snap = self.rend.snap
 
         self.config = ConfigParser()
         self.channellist = [os.path.basename(os.path.splitext(a)[0]) for a in self.rend.channellist()]
         self.config.setdefaults('renderer', {'channel': self.channellist[0],
-                                             'snap': self.rend.snap,
+                                             'snap': self.snap,
                                              'opacity': 0,
                                              'altitude': self.altitude,
                                              'azimuth': self.azimuth,
@@ -132,8 +132,13 @@ class RenderGUI(Widget):
 #initial update
         self._on_resize(Window, Window.size[0], Window.size[1])
         self.saverangedialog = SaveRangeDialog(self, size_hint=(.8, .8), title="Save Range")
+        self.update_display_enabled = True
+        Clock.schedule_interval(lambda dt: self.update_display(), 0.1)
 
         self.initialized = True
+
+    def _rend_setattr(self, key, value):
+        self.rendcontroller_conn.send
 
     def _settings_change(self, section, key, value):
         self._keyboard_open()
@@ -158,6 +163,8 @@ class RenderGUI(Widget):
         self._keyboard = None
 
     def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
+        if not self.rend.condition.acquire(False):
+            return
         if keycode[1] == 'w':  # view up
             self.altitude += 2
         elif keycode[1] == 's':  # view down
@@ -198,15 +205,17 @@ class RenderGUI(Widget):
         else:
             return
 
-        self.update()
+        self.update(False, False)
 
     def _on_resize(self, window, width, height):
         self.rend.projection_x_size, self.rend.projection_y_size = width, height
         self.s.size = (self.s.size[0], height)
         self.update()
 
-    def update(self):
+    def update(self, block=True, lock=True):
         if not self.initialized:
+            return
+        if lock and not self.rend.condition.acquire(block):
             return
 #limit some values
         self.azimuth = self.azimuth % 360
@@ -219,17 +228,6 @@ class RenderGUI(Widget):
         self.rend.y_pixel_offset = self.y_pixel_offset
         self.rend.x_pixel_offset = self.x_pixel_offset
         self.rend.set_snap(self.snap)
-        data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
-                                  opacity=self.rend_opacity, verbose=False)
-        data = np.log10(data[0] if self.rend_opacity else data)
-        data = (data + self.log_offset) * 255 / (data.max() + self.log_offset)
-        data = np.clip(data, 0, 255).astype('uint8')
-        self.buffer_array[:data.shape[0], :data.shape[1]] = data
-
-        buf = np.getbuffer(self.buffer_array)
-
-        # then blit the buffer
-        self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
 
 #update values in GUI
         self.azi_opt.value = str(self.azimuth)
@@ -239,16 +237,37 @@ class RenderGUI(Widget):
         self.stp_opt.value = str(round(self.stepsize, 6))
         self.opa_opt.value = '1' if self.rend_opacity else '0'
         self.snap_opt.value = str(self.rend.snap)
-        self.canvas.ask_update()
+
+        self.rend.output = None
+        self.rend.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
+                                    dict(opacity=self.rend_opacity, verbose=True))
+        self.rend.condition.release()
+
+    def update_display(self):
+        if self.update_display_enabled and self.rend.output is not None and self.rend.output != "":
+            if self.rend.condition.acquire(False):
+                data = self.rend.output
+                self.rend.output = ""
+
+                data = data[0] if isinstance(data, tuple) else data
+                if len(data.shape) != 2:
+                    return
+                data = np.log10(data)
+                data = (data + self.log_offset) * 255 / (data.max() + self.log_offset)
+                data = np.clip(data, 0, 255).astype('uint8')
+                self.buffer_array[:data.shape[0], :data.shape[1]] = data
+
+                buf = np.getbuffer(self.buffer_array)
+
+                # then blit the buffer
+                self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
+                self.canvas.ask_update()
+            self.rend.condition.release()
 
     def save_image(self):
         output_name = tkFileDialog.asksaveasfilename(title='Image Array Filename')
         if not output_name:
             return
-        self.rend.distance_per_pixel = self.distance_per_pixel
-        self.rend.stepsize = self.stepsize
-        self.rend.y_pixel_offset = self.y_pixel_offset
-        self.rend.x_pixel_offset = self.x_pixel_offset
         data = self.rend.i_render(self.channel, self.azimuth, -self.altitude,
                                   opacity=self.rend_opacity, verbose=False)
         self.rend.save_irender(output_name, data[0] if self.rend_opacity else data)
@@ -257,10 +276,6 @@ class RenderGUI(Widget):
         output_name = tkFileDialog.asksaveasfilename(title='Spectra Array Filename')
         if not output_name:
             return
-        self.rend.distance_per_pixel = self.distance_per_pixel
-        self.rend.stepsize = self.stepsize
-        self.rend.y_pixel_offset = self.y_pixel_offset
-        self.rend.x_pixel_offset = self.x_pixel_offset
         data = self.rend.il_render(self.channel, self.azimuth, -self.altitude,
                                    opacity=self.rend_opacity, verbose=False)
         self.rend.save_ilrender(output_name, data)
@@ -270,11 +285,6 @@ class RenderGUI(Widget):
         self.saverangedialog.open()
 
     def _renderrangefromdialog(self, srd, choice):
-        import multiprocessing
-        multiprocessing.Process(target=self._renderrangefromdialog2, args=(srd, choice)).start()
-        #self._renderrangefromdialog2(srd, choice)
-
-    def _renderrangefromdialog2(self, srd, choice):
         snap_bounds = sorted((int(srd.slider_snapmin.value), int(srd.slider_snapmax.value)))
         snap_skip = int(srd.slider_snapskip.value)
         snap_range = range(snap_bounds[0], snap_bounds[1], snap_skip)
@@ -323,8 +333,7 @@ class ProgressBarUpdating(ProgressBar):
     def update(self, dt):
         value, max = self.check_progress()
         if max == 0:
-            #self.y = -10000  # hide
-            pass
+            self.y = -10000  # hide
         else:
             self.y = self.orig_y
             value *= (0.94 / max)

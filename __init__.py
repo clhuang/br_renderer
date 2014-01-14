@@ -5,7 +5,6 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 import pycuda.driver as cuda
-import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
 BLOCKSIZE = 256
@@ -158,6 +157,7 @@ class Renderer(object):
 
         CUDA kernel should include renderer.h to utilize this
         '''
+        import pycuda.autoinit
         self.cuda_code = cuda_code
 
     def set_axes(self, xaxis, yaxis, zaxis):
