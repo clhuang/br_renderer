@@ -3,31 +3,29 @@ from threading import Condition
 
 class RendererController:
     running = True
-    _instance = None
+    render_command = None
 
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(RendererController, cls).__new__(cls, *args, **kwargs)
-        return cls._instance
+    def __init__(self, renderer):
+        self.rend = renderer
 
-    def start(self, renderer):
-        renderer.output = ""
-        renderer.condition = Condition()
-        renderer.output_for_display = True
+    def start(self):
+        self.output = ""
+        self.condition = Condition()
+        self.output_for_display = True
         while self.running:
-            if renderer.output is None:
-                renderer.condition.acquire()
-                command, args, kwargs = renderer.render_command
-                retval = renderer.__getattribute__(command)(*args, **kwargs)
+            if self.output is None:
+                self.condition.acquire()
+                command, args, kwargs = self.render_command
+                retval = self.rend.__getattribute__(command)(*args, **kwargs)
                 if retval is not None:
-                    renderer.output = retval
+                    self.output = retval
                 else:
-                    renderer.output = ""
-                renderer.condition.notify()
-                renderer.condition.release()
+                    self.output = ""
+                self.condition.notify()
+                self.condition.release()
 
-        renderer.context.pop()
-        renderer.context = None
+        self.rend.context.pop()
+        self.rend.context = None
 
         from pycuda.tools import clear_context_caches
         clear_context_caches()

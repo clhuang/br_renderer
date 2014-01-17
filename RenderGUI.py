@@ -62,6 +62,7 @@ class RenderGUI(Widget):
         super(RenderGUI, self).__init__(**kwargs)
 
         self.rend = renderer
+        self.rendctl = renderer.controller
         self.buffer_array = np.empty(BUF_DIMENSIONS[::-1], dtype='uint8')
         self.distance_per_pixel = self.rend.distance_per_pixel
         self.stepsize = self.rend.stepsize
@@ -144,7 +145,7 @@ class RenderGUI(Widget):
         self.initialized = True
 
     def _rend_setattr(self, key, value):
-        self.rendcontroller_conn.send
+        self.rendctl_conn.send
 
     def _settings_change(self, section, key, value):
         self._keyboard_open()
@@ -169,7 +170,7 @@ class RenderGUI(Widget):
         self._keyboard = None
 
     def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
-        if not self.rend.condition.acquire(False):
+        if not self.rendctl.condition.acquire(False):
             return
         if keycode[1] == 'w':  # view up
             self.altitude += 2
@@ -221,9 +222,9 @@ class RenderGUI(Widget):
     def update(self, block=True, lock=True):
         if not self.initialized:
             return
-        if lock and not self.rend.condition.acquire(block):
+        if lock and not self.rendctl.condition.acquire(block):
             return
-        self.rend.output_for_display = True
+        self.rendctl.output_for_display = True
 #limit some values
         self.azimuth = self.azimuth % 360
         self.altitude = sorted((-90, self.altitude, 90))[1]
@@ -245,16 +246,16 @@ class RenderGUI(Widget):
         self.opa_opt.value = '1' if self.rend_opacity else '0'
         self.snap_opt.value = str(self.rend.snap)
 
-        self.rend.output = None
-        self.rend.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
-                                    dict(opacity=self.rend_opacity, verbose=True))
-        self.rend.condition.release()
+        self.rendctl.output = None
+        self.rendctl.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
+                                       dict(opacity=self.rend_opacity, verbose=False))
+        self.rendctl.condition.release()
 
     def update_display(self):
-        if self.update_display_enabled and self.rend.output_for_display and \
-           self.rend.output is not None and self.rend.output is not self.display_data:
-            if self.rend.condition.acquire(False):
-                self.display_data = self.rend.output
+        if self.update_display_enabled and self.rendctl.output_for_display and \
+           self.rendctl.output is not None and self.rendctl.output is not self.display_data:
+            if self.rendctl.condition.acquire(False):
+                self.display_data = self.rendctl.output
 
                 data = self.display_data[0] if isinstance(self.display_data, tuple) else self.display_data
                 if len(data.shape) != 2:
@@ -269,7 +270,7 @@ class RenderGUI(Widget):
                 # then blit the buffer
                 self.texture.blit_buffer(buf[:], colorfmt='luminance', bufferfmt='ubyte')
                 self.canvas.ask_update()
-                self.rend.condition.release()
+                self.rendctl.condition.release()
 
     def save_image(self):
         output_name = tkFileDialog.asksaveasfilename(title='Image Array Filename')
@@ -284,24 +285,25 @@ class RenderGUI(Widget):
         Thread(target=self._ilrender_save, args=(output_name, )).start()
 
     def _irender_save(self, output_name):
-        self.rend.condition.acquire()
-        self.rend.output = None
-        self.rend.output_for_display = False
-        self.rend.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
-                                    dict(opacity=self.rend_opacity, verbose=False))
-        self.rend.condition.wait()
-        self.rend.save_irender(output_name, self.rend.output[0] if self.rend_opacity else self.rend.output)
-        self.rend.condition.release()
+        self.rendctl.condition.acquire()
+        self.rendctl.output = None
+        self.rendctl.output_for_display = False
+        self.rendctl.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
+                                       dict(opacity=self.rend_opacity, verbose=False))
+        self.rendctl.condition.wait()
+        self.rend.save_irender(output_name, self.rendctl.output[0] if self.rend_opacity
+                               else self.rendctl.output)
+        self.rendctl.condition.release()
 
     def _ilrender_save(self, output_name):
-        self.rend.condition.acquire()
-        self.rend.output = None
-        self.rend.output_for_display = False
-        self.rend.render_command = ('il_render', (self.channel, self.azimuth, -self.altitude),
-                                    dict(opacity=self.rend_opacity, verbose=False))
-        self.rend.condition.wait()
-        self.rend.save_ilrender(output_name, self.rend.output)
-        self.rend.condition.release()
+        self.rendctl.condition.acquire()
+        self.rendctl.output = None
+        self.rendctl.output_for_display = False
+        self.rendctl.render_command = ('il_render', (self.channel, self.azimuth, -self.altitude),
+                                       dict(opacity=self.rend_opacity, verbose=False))
+        self.rendctl.condition.wait()
+        self.rend.save_ilrender(output_name, self.rendctl.output)
+        self.rendctl.condition.release()
 
     def save_range(self):
         self.saverangedialog.rend_choice = None
@@ -310,7 +312,7 @@ class RenderGUI(Widget):
     def _renderrangefromdialog(self, srd, choice):
         snap_bounds = sorted((int(srd.slider_snapmin.value), int(srd.slider_snapmax.value)))
         snap_skip = int(srd.slider_snapskip.value)
-        snap_range = range(snap_bounds[0], snap_bounds[1], snap_skip)
+        snap_range = range(snap_bounds[0], snap_bounds[1] + 1, snap_skip)
         channellist = self.channellist
         channel_ids = [channellist.index(lib.text) for lib in srd.channelselect.adapter.selection]
         save_loc = srd.savefilename.text
@@ -327,16 +329,17 @@ class RenderGUI(Widget):
             finished_count = 0
             for snap in snap_range:
                 for channel_id in channel_ids:
-                    finished_count += 1
                     self.renderrange_progress = (finished_count, total_renders)
                     print(snap_range, self.channel, self.azimuth, self.altitude, self.rend_opacity)
                     save_file = save_loct.substitute(num=str(snap), chan=channellist[channel_id])
 
                     self.rend.set_snap(snap)
+                    print('snap changed')
                     if choice == 'il':
                         self._ilrender_save(save_file)
                     elif choice == 'i':
                         self._irender_save(save_file)
+                    finished_count += 1
             self.renderrange_progress = (0, 0)
 
         Thread(target=saveloop).start()
@@ -385,7 +388,6 @@ class RenderApp(App):
         game = RenderGUI(self.rend)
         game.update()
         return game
-
 
 
 def show_renderer(rend):

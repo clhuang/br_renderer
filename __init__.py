@@ -258,6 +258,8 @@ def norm_inverse_axis(axis):
     generate an inverse lookup table that will take real coordinates
     (normalized to (0, 1)) and return a normalized (0, 1) lookup index
     '''
+    if axis.size == 1:
+        return np.array((0, 1), dtype='float32')
     axinverse = interp1d((axis - axis.min()) / np.ptp(axis),
                          np.linspace(0, 1, axis.size))
     return axinverse(np.linspace(0, 1, axis.size * 6)).astype('float32')
