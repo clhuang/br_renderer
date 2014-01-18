@@ -139,7 +139,6 @@ class RenderGUI(Widget):
 #initial update
         self._on_resize(Window, Window.size[0], Window.size[1])
         self.saverangedialog = SaveRangeDialog(self, size_hint=(.8, .8), title="Save Range")
-        self.update_display_enabled = True
         Clock.schedule_interval(lambda dt: self.update_display(), 0.1)
 
         self.initialized = True
@@ -159,6 +158,7 @@ class RenderGUI(Widget):
             setattr(self, key, float(value))
         else:
             return
+        print('settings_update')
         self.update()
 
     def _keyboard_open(self):
@@ -172,6 +172,7 @@ class RenderGUI(Widget):
     def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
         if not self.rendctl.condition.acquire(False):
             return
+        print('keyboard_down', end='')
         if keycode[1] == 'w':  # view up
             self.altitude += 2
         elif keycode[1] == 's':  # view down
@@ -211,19 +212,22 @@ class RenderGUI(Widget):
             self.rend_opacity = not self.rend_opacity
         else:
             return
+        self.rendctl.condition.release()
 
-        self.update(False, False)
+        self.update()
 
     def _on_resize(self, window, width, height):
         self.rend.projection_x_size, self.rend.projection_y_size = width, height
         self.s.size = (self.s.size[0], height)
+        print('resize update')
         self.update()
 
-    def update(self, block=True, lock=True):
+    def update(self, block=True):
         if not self.initialized:
             return
-        if lock and not self.rendctl.condition.acquire(block):
+        if not self.rendctl.condition.acquire(block):
             return
+        print('update acquire')
         self.rendctl.output_for_display = True
 #limit some values
         self.azimuth = self.azimuth % 360
@@ -250,9 +254,10 @@ class RenderGUI(Widget):
         self.rendctl.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
                                        dict(opacity=self.rend_opacity, verbose=False))
         self.rendctl.condition.release()
+        print('update release')
 
     def update_display(self):
-        if self.update_display_enabled and self.rendctl.output_for_display and \
+        if self.rendctl.output_for_display and \
            self.rendctl.output is not None and self.rendctl.output is not self.display_data:
             if self.rendctl.condition.acquire(False):
                 self.display_data = self.rendctl.output
@@ -286,6 +291,7 @@ class RenderGUI(Widget):
 
     def _irender_save(self, output_name):
         self.rendctl.condition.acquire()
+        print('save_acquire')
         self.rendctl.output = None
         self.rendctl.output_for_display = False
         self.rendctl.render_command = ('i_render', (self.channel, self.azimuth, -self.altitude),
@@ -297,6 +303,7 @@ class RenderGUI(Widget):
 
     def _ilrender_save(self, output_name):
         self.rendctl.condition.acquire()
+        print('save_acquire')
         self.rendctl.output = None
         self.rendctl.output_for_display = False
         self.rendctl.render_command = ('il_render', (self.channel, self.azimuth, -self.altitude),
@@ -310,6 +317,7 @@ class RenderGUI(Widget):
         self.saverangedialog.open()
 
     def _renderrangefromdialog(self, srd, choice):
+        srd.auto_dismiss = False
         snap_bounds = sorted((int(srd.slider_snapmin.value), int(srd.slider_snapmax.value)))
         snap_skip = int(srd.slider_snapskip.value)
         snap_range = range(snap_bounds[0], snap_bounds[1] + 1, snap_skip)
@@ -330,17 +338,17 @@ class RenderGUI(Widget):
             for snap in snap_range:
                 for channel_id in channel_ids:
                     self.renderrange_progress = (finished_count, total_renders)
-                    print(snap_range, self.channel, self.azimuth, self.altitude, self.rend_opacity)
                     save_file = save_loct.substitute(num=str(snap), chan=channellist[channel_id])
 
                     self.rend.set_snap(snap)
-                    print('snap changed')
                     if choice == 'il':
                         self._ilrender_save(save_file)
                     elif choice == 'i':
                         self._irender_save(save_file)
                     finished_count += 1
             self.renderrange_progress = (0, 0)
+            self.rend.set_snap(self.snap)
+            srd.auto_dismiss = True
 
         Thread(target=saveloop).start()
 
@@ -356,6 +364,7 @@ class ProgressBarUpdating(ProgressBar):
     def update(self, dt):
         value, max = self.check_progress()
         if max == 0:
+            self.value = 0
             self.y = -10000  # hide
         else:
             self.y = self.orig_y

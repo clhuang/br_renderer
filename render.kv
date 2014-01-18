@@ -12,6 +12,7 @@
     channelselect: channelselect
     auto_dismiss: True
     savefilename: savefilename
+    on_dismiss: self.render_widget._keyboard_open()
     FloatLayout:
         BoxLayout:
             id: b1
@@ -84,7 +85,7 @@
                 text: 'Save Spectra'
                 on_press: root.render_widget._renderrangefromdialog(root, 'il')
         ProgressBarUpdating:
-            width: root.width
+            width: root.width / 2
             height: 5
             pos_hint: {'x': 0, 'y': 0}
             check_progress: lambda: root.render_widget.renderrange_progress
