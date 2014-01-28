@@ -12,34 +12,10 @@ BLOCKSIZE = 256
 MAXGRIDSIZE = 10000000
 
 
-class Renderer(object):
+class CUDAManipulator(object):
     '''
-    Superclass for rendering 3D models.
-
-    Takes care of most useful functions for 3D rendering,
-    such as calculating view vectors, calculating start points
-    for individual pixels, determining whether or not in box,
-    splitting up large datasets along the x-axis, etc.
-
-    Everything else, e.g. iterating through the spaces
-    and integrating must be done by the attached CUDA module
-    and the parameter spec_render to render().
-
-    To see the variables provided for use in the CUDA module,
-    see renderer.h
+    Class for using CUDA, manipulating objects and textures conveniently.
     '''
-    projection_x_size = 640  # size of the output array
-    projection_y_size = 640
-    stepsize = 0.2  # size of a step along the LOS
-    distance_per_pixel = 0.06  # distance (specified by axes) between pixels in the output
-
-    x_pixel_offset = 0  # if 0, the output is centered in the box center--shifts output L/R
-    y_pixel_offset = 0  # shifts output U/D
-
-    mod = None  # CUDA kernel code
-    xaxis = yaxis = zaxis = ixaxis = iyaxis = izaxis = None
-    textures = {}  # stores references to textures to prevent them being cleared
-
     def load_texture(self, name, arr):
         '''
         Loads an array into a texture with a name.
@@ -79,6 +55,41 @@ class Renderer(object):
         Removes all textures from memory.
         '''
         self.textures = {}
+
+    def __init__(self, cuda_code, include_dirs=[]):
+        include_dirs += ['/Developer/NVIDIA/CUDA-5.0/samples/common/inc',
+                         os.path.dirname(os.path.abspath(__file__))]
+        self.mod = SourceModule(cuda_code, no_extern_c=True,
+                                include_dirs=include_dirs)
+
+
+class Renderer(CUDAManipulator):
+    '''
+    Superclass for rendering 3D models.
+
+    Takes care of most useful functions for 3D rendering,
+    such as calculating view vectors, calculating start points
+    for individual pixels, determining whether or not in box,
+    splitting up large datasets along the x-axis, etc.
+
+    Everything else, e.g. iterating through the spaces
+    and integrating must be done by the attached CUDA module
+    and the parameter spec_render to render().
+
+    To see the variables provided for use in the CUDA module,
+    see renderer.h
+    '''
+    projection_x_size = 640  # size of the output array
+    projection_y_size = 640
+    stepsize = 0.2  # size of a step along the LOS
+    distance_per_pixel = 0.06  # distance (specified by axes) between pixels in the output
+
+    x_pixel_offset = 0  # if 0, the output is centered in the box center--shifts output L/R
+    y_pixel_offset = 0  # shifts output U/D
+
+    mod = None  # CUDA kernel code
+    xaxis = yaxis = zaxis = ixaxis = iyaxis = izaxis = None
+    textures = {}  # stores references to textures to prevent them being cleared
 
     def render(self, azimuth, altitude,
                consts, tables, split_tables,
@@ -152,7 +163,7 @@ class Renderer(object):
 
         CUDA kernel should include renderer.h to utilize this
         '''
-        self.cuda_code = cuda_code
+        super(Renderer, self).__init__(cuda_code)
 
     def set_axes(self, xaxis, yaxis, zaxis):
         '''
@@ -164,9 +175,6 @@ class Renderer(object):
         self.xaxis = xaxis
         self.yaxis = yaxis
         self.zaxis = zaxis
-        self.mod = SourceModule(self.cuda_code, no_extern_c=True,
-                                include_dirs=['/Developer/NVIDIA/CUDA-5.0/samples/common/inc',
-                                              os.path.dirname(os.path.abspath(__file__))])
         self.load_constant('xmin', np.float32(xaxis.min()))
         self.load_constant('xmax', np.float32(xaxis.max()))
         self.load_constant('ymin', np.float32(yaxis.min()))
@@ -178,6 +186,75 @@ class Renderer(object):
         self.ixaxis = norm_inverse_axis(xaxis)
         self.iyaxis = norm_inverse_axis(yaxis)
         self.izaxis = norm_inverse_axis(zaxis)
+
+
+class SingAxisRenderer(CUDAManipulator):
+    zcutoff = -1.0  # the point at which we are considered to be no longer in the chromosphere
+    locph = prev_lambd = float('nan')
+    snap = 0
+
+    projection_x_size = projection_y_size = 640
+    nsteps = 600
+
+    ux = uy = uz = e = r = oscdata = ka_table = opatab = None
+
+    def render(self, axis, reverse, consts, tables, split_tables,
+               spec_render, verbose=True):
+        self.clear_textures()
+
+        input_size = self.xaxis.size * self.yaxis.size * self.zaxis.size
+
+        numsplits = (input_size - 1) / MAXGRIDSIZE + 1
+        if axis == 'x':
+            intaxis = self.xaxis
+            ax_id = 0
+        elif axis == 'y':
+            intaxis = self.yaxis
+            ax_id = 1
+        else:
+            intaxis = self.zaxis
+            ax_id = 2
+        intaxis_size = intaxis.size
+        splitsize = np.ceil(intaxis_size / numsplits)
+
+        consts += [('projectionXsize', np.int32(self.projection_x_size)),
+                   ('projectionYsize', np.int32(self.projection_y_size)),
+                   ('axis', np.uint8(ord(axis))),
+                   ('reverse', np.int8(reverse)),
+                   ('nsteps', np.int32(self.nsteps))]
+
+        for tup in tables:
+            self.load_texture(*tup)
+        for tup in consts:
+            self.load_constant(*tup)
+
+        if verbose:
+            print('Loaded textures, computed emissivities')
+
+        #split_tables is tables to split, table_splits is list of split tables
+        table_splits = {name: np.array_split(table, numsplits, ax_id) for name, table in split_tables}
+        table_splits['aptex'] = np.array_split(np.gradient(intaxis), numsplits)
+
+        if reverse:
+            for name in table_splits:
+                table_splits[name].reverse()
+
+        for i in xrange(numsplits):
+            start = i * splitsize
+            if start + splitsize > intaxis_size:
+                splitsize = intaxis_size - start
+
+            if verbose:
+                print('Rendering ' + axis + '-coords ' + str(start) + '-' +
+                      str(start + splitsize) + ' of ' + str(intaxis_size))
+
+            for name, table_split in table_splits.items():
+                self.load_texture(name, table_split[i])
+
+            data_size = self.projection_x_size * self.projection_y_size
+            grid_size = (data_size + BLOCKSIZE - 1) / BLOCKSIZE
+
+            spec_render(self, BLOCKSIZE, grid_size)
 
 
 def numpy3d_to_array(np_array, order=None):
