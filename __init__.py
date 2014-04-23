@@ -9,7 +9,6 @@ import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
 BLOCKSIZE = 256
-MAXGRIDSIZE = 10000000
 
 
 class CUDAManipulator(object):
@@ -79,6 +78,7 @@ class Renderer(CUDAManipulator):
     To see the variables provided for use in the CUDA module,
     see renderer.h
     '''
+    maxgridsize = 10000000
     projection_x_size = 640  # size of the output array
     projection_y_size = 640
     stepsize = 0.2  # size of a step along the LOS
@@ -123,7 +123,7 @@ class Renderer(CUDAManipulator):
         if verbose:
             print('Loaded textures, computed emissivities')
 
-        xsplitsize = MAXGRIDSIZE / (self.yaxis.size * self.zaxis.size)
+        xsplitsize = self.maxgridsize / (self.yaxis.size * self.zaxis.size)
         numsplits = (self.xaxis.size + xsplitsize - 1) / xsplitsize
 
         self.load_constant('viewVector', view_vector)
@@ -204,7 +204,7 @@ class SingAxisRenderer(CUDAManipulator):
 
         input_size = self.xaxis.size * self.yaxis.size * self.zaxis.size
 
-        numsplits = (input_size - 1) / MAXGRIDSIZE + 1
+        numsplits = (input_size - 1) / self.maxgridsize + 1
         if axis == 'x':
             intaxis = self.xaxis
             ax_id = 0
