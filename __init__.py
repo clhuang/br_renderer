@@ -56,7 +56,7 @@ class CUDAManipulator(object):
         self.textures = {}
 
     def __init__(self, cuda_code, include_dirs=[]):
-        include_dirs += ['/Developer/NVIDIA/CUDA-5.0/samples/common/inc',
+        include_dirs += [os.environ['CUDA_HOME'] + '/samples/common/inc',
                          os.path.dirname(os.path.abspath(__file__))]
         self.mod = SourceModule(cuda_code, no_extern_c=True,
                                 include_dirs=include_dirs)

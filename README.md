@@ -5,3 +5,5 @@ Basic framework for ray tracing with CUDA, especially for applications that requ
 Easily calculates view vectors and start points based on pixel locations, determining whether or not in bounds, etc.
 
 Actual integration and iteration is done by an attached CUDA module (written by the user, and likely will include renderer.cuh)
+
+Ensure that environment variable CUDA_HOME is set correctly.
